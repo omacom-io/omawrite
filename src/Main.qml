@@ -15,8 +15,8 @@ ApplicationWindow {
 
     readonly property bool darkMode: backend.darkMode
     readonly property color pageColor: darkMode ? "#101010" : "#fbfaf5"
-    readonly property color textColor: darkMode ? "#aaa9a6" : "#232323"
-    readonly property color strongTextColor: darkMode ? "#d2d2d0" : "#161616"
+    readonly property color textColor: darkMode ? "#9b9b98" : "#333331"
+    readonly property color strongTextColor: darkMode ? "#c8c8c4" : "#161616"
     readonly property color mutedColor: darkMode ? "#5b5d62" : "#aaa49d"
     readonly property color selectionFill: darkMode ? "#3d4b5e" : "#c7d7ee"
     readonly property int editorWidth: Math.min(640, Math.max(360, width - 120))
@@ -135,7 +135,7 @@ ApplicationWindow {
                 active: hovered || pressed
             }
 
-            TextArea {
+            TextEdit {
                 id: editor
                 x: Math.round((editorFlick.width - width) / 2)
                 y: Math.max(42, Math.round(win.height * 0.05))
@@ -148,27 +148,159 @@ ApplicationWindow {
                 selectByMouse: true
                 persistentSelection: true
                 activeFocusOnPress: true
-                placeholderText: "# Start writing"
-                placeholderTextColor: win.mutedColor
                 color: win.textColor
                 selectedTextColor: win.strongTextColor
                 selectionColor: win.selectionFill
                 font.family: "iA Writer Mono S"
-                font.pixelSize: 16
-                font.weight: Font.Medium
-                leftPadding: 0
-                rightPadding: 0
-                topPadding: 0
-                bottomPadding: 0
-                background: null
+                font.pixelSize: 18
+                font.weight: Font.Normal
                 cursorDelegate: Rectangle {
                     width: 1
                     color: win.strongTextColor
                 }
 
+                function replaceSelectionWith(replacement) {
+                    var start = Math.min(selectionStart, selectionEnd);
+                    var end = Math.max(selectionStart, selectionEnd);
+                    if (start !== end) {
+                        remove(start, end);
+                        cursorPosition = start;
+                    }
+                    insert(cursorPosition, replacement);
+                    cursorPosition += replacement.length;
+                }
+
+                function lineBounds(position) {
+                    var start = text.lastIndexOf("\n", Math.max(0, position - 1)) + 1;
+                    var end = text.indexOf("\n", position);
+                    if (end === -1)
+                        end = text.length;
+                    return { start: start, end: end };
+                }
+
+                function addRange(ranges, start, end) {
+                    if (end > start)
+                        ranges.push({ start: start, end: end });
+                }
+
+                function hiddenRangesForLine(lineText, lineStart) {
+                    var ranges = [];
+                    var match;
+                    var re = /(\*\*|__)(.+?)(\1)/g;
+                    while ((match = re.exec(lineText)) !== null) {
+                        addRange(ranges, lineStart + match.index,
+                                 lineStart + match.index + match[1].length);
+                        addRange(ranges,
+                                 lineStart + match.index + match[0].length - match[3].length,
+                                 lineStart + match.index + match[0].length);
+                    }
+
+                    re = /(^|[^*])\*([^*\n]+)\*(?!\*)/g;
+                    while ((match = re.exec(lineText)) !== null) {
+                        var starStart = lineStart + match.index + match[1].length;
+                        addRange(ranges, starStart, starStart + 1);
+                        addRange(ranges, starStart + match[0].length - match[1].length - 1,
+                                 starStart + match[0].length - match[1].length);
+                    }
+
+                    re = /(^|[^_])_([^_\n]+)_(?!_)/g;
+                    while ((match = re.exec(lineText)) !== null) {
+                        var underscoreStart = lineStart + match.index + match[1].length;
+                        addRange(ranges, underscoreStart, underscoreStart + 1);
+                        addRange(ranges,
+                                 underscoreStart + match[0].length - match[1].length - 1,
+                                 underscoreStart + match[0].length - match[1].length);
+                    }
+
+                    re = /\[([^\]]+)\]\(([^)]+)\)/g;
+                    while ((match = re.exec(lineText)) !== null) {
+                        var start = lineStart + match.index;
+                        var textStart = start + 1;
+                        var textEnd = textStart + match[1].length;
+                        var end = start + match[0].length;
+                        addRange(ranges, start, textStart);
+                        addRange(ranges, textEnd, end);
+                    }
+
+                    ranges.sort(function(a, b) { return a.start - b.start; });
+                    return ranges;
+                }
+
+                function hiddenRangesAt(position) {
+                    var bounds = lineBounds(position);
+                    return hiddenRangesForLine(text.slice(bounds.start, bounds.end), bounds.start);
+                }
+
+                function skipHiddenForward(position) {
+                    var pos = position;
+                    var ranges = hiddenRangesAt(pos);
+                    for (var i = 0; i < ranges.length; i++) {
+                        if (pos >= ranges[i].start && pos < ranges[i].end) {
+                            pos = ranges[i].end;
+                            i = -1;
+                        }
+                    }
+                    return pos;
+                }
+
+                function skipHiddenBackward(position) {
+                    var pos = position;
+                    var ranges = hiddenRangesAt(pos);
+                    for (var i = ranges.length - 1; i >= 0; i--) {
+                        if (pos > ranges[i].start && pos <= ranges[i].end) {
+                            pos = ranges[i].start;
+                            i = ranges.length;
+                        }
+                    }
+                    return pos;
+                }
+
+                function moveCursorVisibly(direction) {
+                    if (selectionStart !== selectionEnd) {
+                        cursorPosition = direction > 0
+                            ? Math.max(selectionStart, selectionEnd)
+                            : Math.min(selectionStart, selectionEnd);
+                        return;
+                    }
+
+                    var pos = Math.max(0, Math.min(text.length, cursorPosition + direction));
+                    cursorPosition = direction > 0
+                        ? skipHiddenForward(pos)
+                        : skipHiddenBackward(pos);
+                }
+
+                Keys.priority: Keys.BeforeItem
+                Keys.onPressed: function(event) {
+                    var returnKey = event.key === Qt.Key_Return || event.key === Qt.Key_Enter;
+                    var commandModifier = event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier);
+                    if (returnKey && !commandModifier) {
+                        replaceSelectionWith((event.modifiers & Qt.ShiftModifier) ? "\n" : "\n\n");
+                        event.accepted = true;
+                    } else if (!commandModifier && !(event.modifiers & Qt.ShiftModifier)
+                               && event.key === Qt.Key_Right) {
+                        moveCursorVisibly(1);
+                        event.accepted = true;
+                    } else if (!commandModifier && !(event.modifiers & Qt.ShiftModifier)
+                               && event.key === Qt.Key_Left) {
+                        moveCursorVisibly(-1);
+                        event.accepted = true;
+                    }
+                }
+
                 onTextChanged: {
                     if (backend.documentText !== text)
                         backend.documentText = text;
+                }
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    text: "# Start writing"
+                    visible: editor.text.length === 0 && !editor.activeFocus
+                    color: win.mutedColor
+                    font.family: editor.font.family
+                    font.pixelSize: editor.font.pixelSize
+                    font.weight: editor.font.weight
                 }
 
                 Component.onCompleted: {
@@ -193,7 +325,8 @@ ApplicationWindow {
                 selectionColor: win.selectionFill
                 selectedTextColor: win.strongTextColor
                 font.family: "iA Writer Mono S"
-                font.pixelSize: 16
+                font.pixelSize: 18
+                font.weight: Font.Normal
             }
         }
 
