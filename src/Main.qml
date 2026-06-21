@@ -160,6 +160,41 @@ ApplicationWindow {
                     cursorPosition += replacement.length;
                 }
 
+                function escapeMarkdownLinkText(linkText) {
+                    return linkText.replace(/\\/g, "\\\\")
+                                   .replace(/\[/g, "\\[")
+                                   .replace(/\]/g, "\\]");
+                }
+
+                function escapeMarkdownLinkDestination(linkUrl) {
+                    return linkUrl.replace(/\\/g, "\\\\")
+                                  .replace(/\(/g, "\\(")
+                                  .replace(/\)/g, "\\)");
+                }
+
+                function pasteClipboardUrlAsMarkdownLink() {
+                    var start = Math.min(selectionStart, selectionEnd);
+                    var end = Math.max(selectionStart, selectionEnd);
+                    if (start === end)
+                        return false;
+
+                    var url = backend.clipboardUrl();
+                    if (url === "")
+                        return false;
+
+                    var selected = text.slice(start, end);
+                    var leading = selected.match(/^\s*/)[0];
+                    var trailing = selected.match(/\s*$/)[0];
+                    var linkText = selected.slice(leading.length,
+                                                  selected.length - trailing.length);
+                    if (linkText === "")
+                        return false;
+
+                    replaceSelectionWith(leading + "[" + escapeMarkdownLinkText(linkText) + "]("
+                                         + escapeMarkdownLinkDestination(url) + ")" + trailing);
+                    return true;
+                }
+
                 function lineBounds(position) {
                     var start = text.lastIndexOf("\n", Math.max(0, position - 1)) + 1;
                     var end = text.indexOf("\n", position);
@@ -202,7 +237,7 @@ ApplicationWindow {
                                  underscoreStart + match[0].length - match[1].length);
                     }
 
-                    re = /\[([^\]]+)\]\(([^)]+)\)/g;
+                    re = /\[([^\]]+)\]\(((?:\\.|[^)])+)\)/g;
                     while ((match = re.exec(lineText)) !== null) {
                         var start = lineStart + match.index;
                         var textStart = start + 1;
@@ -274,6 +309,17 @@ ApplicationWindow {
 
                 Keys.priority: Keys.BeforeItem
                 Keys.onPressed: function(event) {
+                    var pasteKey = (event.key === Qt.Key_V)
+                        && (event.modifiers & Qt.ControlModifier)
+                        && !(event.modifiers & (Qt.AltModifier | Qt.MetaModifier | Qt.ShiftModifier));
+                    var shiftInsert = (event.key === Qt.Key_Insert)
+                        && (event.modifiers & Qt.ShiftModifier)
+                        && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier));
+                    if ((pasteKey || shiftInsert) && pasteClipboardUrlAsMarkdownLink()) {
+                        event.accepted = true;
+                        return;
+                    }
+
                     var returnKey = event.key === Qt.Key_Return || event.key === Qt.Key_Enter;
                     var commandModifier = event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier);
                     if (returnKey && !commandModifier) {

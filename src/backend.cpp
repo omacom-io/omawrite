@@ -1,16 +1,56 @@
 #include "backend.h"
 
+#include <QClipboard>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QMimeData>
 #include <QProcess>
 #include <QQuickTextDocument>
 #include <QRegularExpression>
 #include <QTextStream>
+#include <QUrl>
 
 #include "filepicker.h"
 #include "markdownhighlighter.h"
+
+namespace {
+QString normalizedLinkUrl(const QString &clipboardText) {
+    QString candidate = clipboardText.trimmed();
+    const int lineBreak = candidate.indexOf(QRegularExpression(QStringLiteral("[\\r\\n]")));
+    if (lineBreak >= 0)
+        candidate = candidate.left(lineBreak).trimmed();
+
+    if (candidate.isEmpty())
+        return {};
+
+    if (candidate.startsWith(QStringLiteral("www."), Qt::CaseInsensitive))
+        candidate.prepend(QStringLiteral("https://"));
+
+    static const QRegularExpression schemeRe(
+        QStringLiteral("^[A-Za-z][A-Za-z0-9+.-]*:"));
+    if (!schemeRe.match(candidate).hasMatch())
+        return {};
+
+    const QUrl url(candidate);
+    if (!url.isValid() || url.scheme().isEmpty())
+        return {};
+
+    const QString scheme = url.scheme().toLower();
+    const bool webUrl = scheme == QStringLiteral("http")
+        || scheme == QStringLiteral("https")
+        || scheme == QStringLiteral("ftp");
+    if (webUrl && url.host().isEmpty())
+        return {};
+
+    if (!webUrl && scheme != QStringLiteral("mailto"))
+        return {};
+
+    return url.toString();
+}
+}
 
 Backend::Backend(FilePicker *filePicker, QObject *parent)
     : QObject(parent), m_filePicker(filePicker) {
@@ -123,6 +163,30 @@ void Backend::newWindow() {
                                                  QStringList());
     if (!started)
         setStatus(QStringLiteral("Could not open a new window."));
+}
+
+QString Backend::clipboardUrl() const {
+    const QClipboard *clipboard = QGuiApplication::clipboard();
+    if (!clipboard)
+        return {};
+
+    const QMimeData *mimeData = clipboard->mimeData();
+    if (!mimeData)
+        return {};
+
+    if (mimeData->hasUrls()) {
+        const QList<QUrl> urls = mimeData->urls();
+        for (const QUrl &url : urls) {
+            const QString normalized = normalizedLinkUrl(url.toString());
+            if (!normalized.isEmpty())
+                return normalized;
+        }
+    }
+
+    if (!mimeData->hasText())
+        return {};
+
+    return normalizedLinkUrl(mimeData->text());
 }
 
 void Backend::setFileUrl(const QUrl &url) {

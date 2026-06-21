@@ -37,7 +37,8 @@ void MarkdownHighlighter::rebuildFormats() {
 
     m_hiddenMarkerFormat = QTextCharFormat();
     m_hiddenMarkerFormat.setForeground(background);
-    m_hiddenMarkerFormat.setFontPointSize(1);
+    m_hiddenMarkerFormat.setFontPointSize(0.1);
+    m_hiddenMarkerFormat.setFontStretch(1);
 
     m_headingFormat = QTextCharFormat();
     m_headingFormat.setForeground(text);
@@ -129,7 +130,8 @@ void MarkdownHighlighter::highlightInline(const QString &text) {
                   m_hiddenMarkerFormat);
     }
 
-    static const QRegularExpression linkRe(QStringLiteral("\\[([^\\]]+)\\]\\(([^)]+)\\)"));
+    static const QRegularExpression linkRe(
+        QStringLiteral("\\[([^\\]]+)\\]\\(((?:\\\\.|[^)])+)\\)"));
     QRegularExpressionMatchIterator linkMatches = linkRe.globalMatch(text);
     while (linkMatches.hasNext()) {
         const QRegularExpressionMatch match = linkMatches.next();

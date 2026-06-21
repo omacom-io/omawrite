@@ -39,6 +39,7 @@ public:
     Q_INVOKABLE void save();
     Q_INVOKABLE void saveAsDialog();
     Q_INVOKABLE void newWindow();
+    Q_INVOKABLE QString clipboardUrl() const;
 
 signals:
     void documentTextChanged();
