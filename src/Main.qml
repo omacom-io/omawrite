@@ -15,10 +15,10 @@ ApplicationWindow {
 
     readonly property bool darkMode: backend.darkMode
     readonly property color pageColor: darkMode ? "#101010" : "#fbfaf5"
-    readonly property color textColor: darkMode ? "#9b9b98" : "#333331"
-    readonly property color strongTextColor: darkMode ? "#c8c8c4" : "#161616"
-    readonly property color mutedColor: darkMode ? "#5b5d62" : "#aaa49d"
-    readonly property color selectionFill: darkMode ? "#3d4b5e" : "#c7d7ee"
+    readonly property color textColor: darkMode ? "#b7b7b3" : "#333331"
+    readonly property color strongTextColor: darkMode ? "#d0d0cc" : "#161616"
+    readonly property color mutedColor: darkMode ? "#676862" : "#aaa49d"
+    readonly property color selectionFill: darkMode ? "#4a4a46" : "#c7d7ee"
     readonly property int editorWidth: Math.min(640, Math.max(360, width - 120))
     property bool previewMode: false
 
@@ -108,17 +108,6 @@ ApplicationWindow {
     Item {
         anchors.fill: parent
 
-        Text {
-            anchors.centerIn: parent
-            text: "OMAWRITE"
-            color: darkMode ? "#ffffff" : "#000000"
-            opacity: darkMode ? 0.025 : 0.035
-            font.family: "iA Writer Mono S"
-            font.pixelSize: Math.max(36, Math.min(72, win.width / 15))
-            font.bold: true
-            visible: !previewMode
-        }
-
         Flickable {
             id: editorFlick
             anchors.fill: parent
@@ -154,6 +143,7 @@ ApplicationWindow {
                 font.family: "iA Writer Mono S"
                 font.pixelSize: 18
                 font.weight: Font.Normal
+                renderType: TextEdit.NativeRendering
                 cursorDelegate: Rectangle {
                     width: 1
                     color: win.strongTextColor
@@ -327,6 +317,7 @@ ApplicationWindow {
                 font.family: "iA Writer Mono S"
                 font.pixelSize: 18
                 font.weight: Font.Normal
+                renderType: TextEdit.NativeRendering
             }
         }
 
