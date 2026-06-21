@@ -12,4 +12,4 @@ fi
 "$ROOT/bin/build"
 
 cd "$PKGBUILD_DIR"
-exec makepkg -si "$@"
+exec makepkg -fsi "$@"
