@@ -18,7 +18,6 @@ ApplicationWindow {
     readonly property color strongTextColor: darkMode ? "#eeeeee" : "#222324"
     readonly property color mutedColor: darkMode ? "#909191" : "#aeb1b5"
     readonly property color selectionFill: darkMode ? "#186a9a" : "#2077b2"
-    readonly property color activeButtonColor: "#428bca"
     readonly property int editorFontPixelSize: 20
     readonly property int editorWidth: Math.min(
         Math.round(writerFontMetrics.averageCharacterWidth * 65),
@@ -129,146 +128,21 @@ ApplicationWindow {
         }
     }
 
-    Dialog {
+    UnsavedChangesDialog {
         id: unsavedChangesDialog
-        modal: true
-        focus: true
-        closePolicy: Popup.NoAutoClose
-        width: Math.min(420, win.width - 48)
-        x: Math.round((win.width - width) / 2)
-        y: Math.round((win.height - height) / 2)
-        padding: 20
-        background: Rectangle {
-            color: win.darkMode ? "#1a1a1a" : "#ffffff"
-            border.color: win.darkMode ? "#343434" : "#d8d8d8"
-            radius: 0
+        fileName: backend.fileName
+        darkMode: win.darkMode
+        textColor: win.textColor
+        strongTextColor: win.strongTextColor
+        containerWidth: win.width
+        containerHeight: win.height
+
+        onDiscardRequested: {
+            win.closeConfirmed = true;
+            win.close();
         }
 
-        contentItem: Column {
-            spacing: 12
-
-            Label {
-                text: "Unsaved changes"
-                color: win.strongTextColor
-                font.family: "iA Writer Mono S"
-                font.pixelSize: 16
-                font.bold: true
-            }
-
-            Label {
-                width: parent.width
-                text: "Save changes to " + backend.fileName + " before closing?"
-                color: win.textColor
-                wrapMode: Text.Wrap
-                font.family: "iA Writer Mono S"
-                font.pixelSize: 13
-            }
-        }
-
-        footer: Item {
-            implicitHeight: dialogButtons.implicitHeight + 20
-
-            Row {
-                id: dialogButtons
-                anchors.right: parent.right
-                anchors.rightMargin: 20
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 8
-
-                Button {
-                    id: cancelButton
-                    text: "Cancel"
-                    leftPadding: 16
-                    rightPadding: 16
-                    topPadding: 7
-                    bottomPadding: 7
-                    contentItem: Label {
-                        text: cancelButton.text
-                        color: win.textColor
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: 12
-                    }
-                    background: Rectangle {
-                        implicitWidth: 88
-                        implicitHeight: 34
-                        radius: 0
-                        color: cancelButton.down
-                            ? (win.darkMode ? "#2a2a2a" : "#dedede")
-                            : cancelButton.hovered
-                                ? (win.darkMode ? "#242424" : "#eeeeee")
-                                : (win.darkMode ? "#202020" : "#f6f6f6")
-                        border.color: win.darkMode ? "#424242" : "#c8c8c8"
-                    }
-                    onClicked: unsavedChangesDialog.close()
-                }
-
-                Button {
-                    id: discardButton
-                    text: "Discard"
-                    leftPadding: 16
-                    rightPadding: 16
-                    topPadding: 7
-                    bottomPadding: 7
-                    contentItem: Label {
-                        text: discardButton.text
-                        color: win.textColor
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: 12
-                    }
-                    background: Rectangle {
-                        implicitWidth: 88
-                        implicitHeight: 34
-                        radius: 0
-                        color: discardButton.down
-                            ? (win.darkMode ? "#2a2a2a" : "#dedede")
-                            : discardButton.hovered
-                                ? (win.darkMode ? "#242424" : "#eeeeee")
-                                : (win.darkMode ? "#202020" : "#f6f6f6")
-                        border.color: win.darkMode ? "#424242" : "#c8c8c8"
-                    }
-                    onClicked: {
-                        unsavedChangesDialog.close();
-                        win.closeConfirmed = true;
-                        win.close();
-                    }
-                }
-
-                Button {
-                    id: saveButton
-                    text: "Save"
-                    highlighted: true
-                    leftPadding: 16
-                    rightPadding: 16
-                    topPadding: 7
-                    bottomPadding: 7
-                    contentItem: Label {
-                        text: saveButton.text
-                        color: "#ffffff"
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        font.family: "iA Writer Mono S"
-                        font.pixelSize: 12
-                    }
-                    background: Rectangle {
-                        implicitWidth: 88
-                        implicitHeight: 34
-                        radius: 0
-                        color: saveButton.down
-                            ? "#347ab3"
-                            : saveButton.hovered ? "#4b96d0" : win.activeButtonColor
-                        border.color: "#367eb7"
-                    }
-                    onClicked: {
-                        unsavedChangesDialog.close();
-                        backend.saveForClose();
-                    }
-                }
-            }
-        }
+        onSaveRequested: backend.saveForClose()
     }
 
     Item {
