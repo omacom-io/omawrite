@@ -18,12 +18,21 @@ ApplicationWindow {
     readonly property color strongTextColor: darkMode ? "#d0d0cc" : "#161616"
     readonly property color mutedColor: darkMode ? "#676862" : "#aaa49d"
     readonly property color selectionFill: darkMode ? "#4a4a46" : "#c7d7ee"
-    readonly property int editorWidth: Math.min(640, Math.max(360, width - 120))
+    readonly property int editorFontPixelSize: 20
+    readonly property int editorWidth: Math.min(
+        Math.round(writerFontMetrics.averageCharacterWidth * 65),
+        Math.max(360, width - Math.round(writerFontMetrics.averageCharacterWidth * 20)))
     property bool previewMode: false
 
     Material.theme: darkMode ? Material.Dark : Material.Light
     Material.accent: darkMode ? "#d9d4c8" : "#202124"
     color: pageColor
+
+    FontMetrics {
+        id: writerFontMetrics
+        font.family: "iA Writer Mono S"
+        font.pixelSize: win.editorFontPixelSize
+    }
 
     function toggleFullScreen() {
         win.visibility = win.visibility === Window.FullScreen
@@ -140,7 +149,7 @@ ApplicationWindow {
                 selectedTextColor: win.strongTextColor
                 selectionColor: win.selectionFill
                 font.family: "iA Writer Mono S"
-                font.pixelSize: 18
+                font.pixelSize: win.editorFontPixelSize
                 font.weight: Font.Normal
                 renderType: TextEdit.NativeRendering
                 cursorDelegate: Rectangle {
@@ -394,7 +403,7 @@ ApplicationWindow {
                 selectionColor: win.selectionFill
                 selectedTextColor: win.strongTextColor
                 font.family: "iA Writer Mono S"
-                font.pixelSize: 18
+                font.pixelSize: win.editorFontPixelSize
                 font.weight: Font.Normal
                 renderType: TextEdit.NativeRendering
             }

@@ -63,6 +63,7 @@ private:
     void setWordCount(int words);
     void refreshWordCount();
     void scheduleWordCount();
+    void applyDocumentTypography();
 
     FilePicker *m_filePicker = nullptr;
     QString m_documentText;

@@ -10,6 +10,8 @@
 #include <QProcess>
 #include <QQuickTextDocument>
 #include <QRegularExpression>
+#include <QTextBlockFormat>
+#include <QTextCursor>
 #include <QTextDocument>
 #include <QTextStream>
 #include <QUrl>
@@ -18,6 +20,8 @@
 #include "markdownhighlighter.h"
 
 namespace {
+constexpr qreal typoraLineHeightPercent = 180;
+
 QString normalizedLinkUrl(const QString &clipboardText) {
     QString candidate = clipboardText.trimmed();
     const int newline = candidate.indexOf(QLatin1Char('\n'));
@@ -77,6 +81,7 @@ void Backend::setDocumentText(const QString &text) {
 
     m_documentText = text;
     emit documentTextChanged();
+    applyDocumentTypography();
 
     if (m_loading) {
         if (m_wordCountTimer.isActive())
@@ -127,6 +132,7 @@ void Backend::attachDocument(QObject *textDocument) {
     m_document = quickDocument->textDocument();
     m_highlighter = new MarkdownHighlighter(m_document);
     m_highlighter->setDarkMode(m_darkMode);
+    applyDocumentTypography();
 }
 
 void Backend::openDialog() {
@@ -299,4 +305,21 @@ void Backend::refreshWordCount() {
 
 void Backend::scheduleWordCount() {
     m_wordCountTimer.start();
+}
+
+void Backend::applyDocumentTypography() {
+    if (!m_document)
+        return;
+
+    QTextBlockFormat blockFormat;
+    blockFormat.setLineHeight(typoraLineHeightPercent, QTextBlockFormat::ProportionalHeight);
+
+    const bool undoEnabled = m_document->isUndoRedoEnabled();
+    m_document->setUndoRedoEnabled(false);
+
+    QTextCursor cursor(m_document);
+    cursor.select(QTextCursor::Document);
+    cursor.mergeBlockFormat(blockFormat);
+
+    m_document->setUndoRedoEnabled(undoEnabled);
 }
