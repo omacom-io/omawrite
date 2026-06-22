@@ -2,13 +2,9 @@
 
 A dead-simple Markdown writing app built with Qt Quick and C++.
 
-## Run
+## Install
 
-```bash
-./bin/build
-./build/omawrite
-./build/omawrite notes.md
-```
+Install via the Omarchy Package Repository via the `omawrite` package. It's installed by default in new installations of Omarchy (from Quattro forward).
 
 ## Shortcuts
 
