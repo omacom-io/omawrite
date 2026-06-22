@@ -166,6 +166,23 @@ ApplicationWindow {
                 active: hovered || pressed
             }
 
+            // Keep the editing caret within the viewport so writing past the
+            // bottom edge scrolls the page along with the text.
+            function ensureCursorVisible() {
+                if (previewMode)
+                    return;
+
+                var margin = win.editorFontPixelSize * 2;
+                var cursorTop = editor.y + editor.cursorRectangle.y;
+                var cursorBottom = cursorTop + editor.cursorRectangle.height;
+                var maxContentY = Math.max(0, contentHeight - height);
+
+                if (cursorBottom + margin > contentY + height)
+                    contentY = Math.min(maxContentY, cursorBottom + margin - height);
+                else if (cursorTop - margin < contentY)
+                    contentY = Math.max(0, cursorTop - margin);
+            }
+
             TextEdit {
                 id: editor
                 x: Math.round((editorFlick.width - width) / 2)
@@ -190,6 +207,7 @@ ApplicationWindow {
                     width: 1
                     color: win.strongTextColor
                 }
+                onCursorRectangleChanged: editorFlick.ensureCursorVisible()
                 property int cachedHiddenLineStart: -1
                 property string cachedHiddenLineText: ""
                 property var cachedHiddenRanges: []
