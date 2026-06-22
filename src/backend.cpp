@@ -72,7 +72,13 @@ Backend::Backend(FilePicker *filePicker, QObject *parent)
 
     connect(m_filePicker, &FilePicker::openSelected, this, &Backend::open);
     connect(m_filePicker, &FilePicker::saveSelected, this, &Backend::saveTo);
-    connect(m_filePicker, &FilePicker::failed, this, &Backend::setStatus);
+    connect(m_filePicker, &FilePicker::canceled, this, [this]() {
+        m_closeAfterSave = false;
+    });
+    connect(m_filePicker, &FilePicker::failed, this, [this](const QString &message) {
+        m_closeAfterSave = false;
+        setStatus(message);
+    });
 }
 
 void Backend::setDocumentText(const QString &text) {
@@ -171,9 +177,24 @@ void Backend::save() {
     saveTo(m_fileUrl);
 }
 
+void Backend::saveForClose() {
+    if (!m_modified) {
+        emit closeAfterSave();
+        return;
+    }
+
+    m_closeAfterSave = true;
+    save();
+}
+
 void Backend::saveAsDialog() {
-    if (m_filePicker)
-        m_filePicker->saveDocument(suggestedSaveUrl());
+    if (!m_filePicker) {
+        m_closeAfterSave = false;
+        setStatus(QStringLiteral("No file picker is available."));
+        return;
+    }
+
+    m_filePicker->saveDocument(suggestedSaveUrl());
 }
 
 void Backend::newWindow() {
@@ -244,6 +265,7 @@ void Backend::setStatus(const QString &status) {
 
 void Backend::saveTo(const QUrl &url) {
     if (!url.isLocalFile()) {
+        m_closeAfterSave = false;
         setStatus(QStringLiteral("Only local files can be saved."));
         return;
     }
@@ -251,6 +273,7 @@ void Backend::saveTo(const QUrl &url) {
     const QString targetName = QFileInfo(url.toLocalFile()).fileName();
     QFile file(url.toLocalFile());
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        m_closeAfterSave = false;
         setStatus(QStringLiteral("Could not save %1.").arg(targetName));
         return;
     }
@@ -258,14 +281,20 @@ void Backend::saveTo(const QUrl &url) {
     const QString text = currentDocumentText();
     file.write(text.toUtf8());
     if (file.error() != QFileDevice::NoError) {
+        m_closeAfterSave = false;
         setStatus(QStringLiteral("Could not write %1.").arg(targetName));
         return;
     }
 
+    const bool shouldClose = m_closeAfterSave;
+    m_closeAfterSave = false;
     m_documentText = text;
     setFileUrl(url);
     setModified(false);
     setStatus(QStringLiteral("Saved %1").arg(fileName()));
+
+    if (shouldClose)
+        emit closeAfterSave();
 }
 
 QUrl Backend::suggestedSaveUrl() const {

@@ -16,5 +16,6 @@ public:
 signals:
     void openSelected(const QUrl &url);
     void saveSelected(const QUrl &url);
+    void canceled();
     void failed(const QString &message);
 };

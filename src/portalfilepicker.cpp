@@ -60,8 +60,10 @@ void PortalFilePicker::saveDocument(const QUrl &suggestedUrl) {
 
 bool PortalFilePicker::requestFile(const QString &method, const QString &title,
                                    const QVariantMap &options, Action action) {
-    if (m_pendingAction != Action::None)
+    if (m_pendingAction != Action::None) {
+        emit failed(QStringLiteral("A file picker is already open."));
         return false;
+    }
 
     QDBusInterface portal(QStringLiteral("org.freedesktop.portal.Desktop"),
                           QStringLiteral("/org/freedesktop/portal/desktop"),
@@ -105,12 +107,16 @@ void PortalFilePicker::handleResponse(uint response, const QVariantMap &results)
     const Action action = m_pendingAction;
     clearPending();
 
-    if (response != 0)
+    if (response != 0) {
+        emit canceled();
         return;
+    }
 
     const QStringList uris = results.value(QStringLiteral("uris")).toStringList();
-    if (uris.isEmpty())
+    if (uris.isEmpty()) {
+        emit canceled();
         return;
+    }
 
     const QUrl url(uris.first());
     if (action == Action::Open)

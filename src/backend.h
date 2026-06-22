@@ -39,6 +39,7 @@ public:
     Q_INVOKABLE void openDialog();
     Q_INVOKABLE void open(const QUrl &url);
     Q_INVOKABLE void save();
+    Q_INVOKABLE void saveForClose();
     Q_INVOKABLE void saveAsDialog();
     Q_INVOKABLE void newWindow();
     Q_INVOKABLE QString clipboardUrl() const;
@@ -51,6 +52,7 @@ signals:
     void statusChanged();
     void wordCountChanged();
     void darkModeChanged();
+    void closeAfterSave();
 
 private:
     void setFileUrl(const QUrl &url);
@@ -73,6 +75,7 @@ private:
     int m_wordCount = 0;
     bool m_darkMode = true;
     bool m_loading = false;
+    bool m_closeAfterSave = false;
     bool m_formattingTypography = false;
     int m_formattedBlockCount = 0;
     QTimer m_wordCountTimer;
