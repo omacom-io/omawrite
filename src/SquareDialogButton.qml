@@ -34,8 +34,13 @@ Button {
                 : control.hovered
                     ? (control.darkMode ? "#242424" : "#eeeeee")
                     : (control.darkMode ? "#202020" : "#f6f6f6")
-        border.color: control.primary
-            ? "#367eb7"
-            : (control.darkMode ? "#424242" : "#c8c8c8")
+        border.color: control.activeFocus
+            ? (control.primary 
+                ? (control.darkMode ? "#ffffff" : "#222324") 
+                : control.activeColor)
+            : (control.primary
+                ? "#367eb7"
+                : (control.darkMode ? "#424242" : "#c8c8c8"))
+        border.width: control.activeFocus ? 2 : 1
     }
 }

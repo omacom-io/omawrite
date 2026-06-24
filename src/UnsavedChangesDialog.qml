@@ -17,7 +17,7 @@ Dialog {
 
     modal: true
     focus: true
-    closePolicy: Popup.NoAutoClose
+    closePolicy: Popup.CloseOnEscape | Popup.NoAutoClose
     width: Math.min(420, containerWidth - 48)
     x: Math.round((containerWidth - width) / 2)
     y: Math.round((containerHeight - height) / 2)
@@ -61,32 +61,84 @@ Dialog {
             spacing: 8
 
             SquareDialogButton {
+                id: cancelButton
                 text: "Cancel"
                 darkMode: root.darkMode
                 labelColor: root.textColor
+                focus: true
+                activeFocusOnTab: true
                 onClicked: root.close()
+                KeyNavigation.tab: discardButton
+                KeyNavigation.right: discardButton
+                KeyNavigation.left: saveButton
+                KeyNavigation.backtab: saveButton
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Enter || event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
+                        root.close();
+                        event.accepted = true;
+                    }
+                }
             }
 
             SquareDialogButton {
+                id: discardButton
                 text: "Discard"
                 darkMode: root.darkMode
                 labelColor: root.textColor
+                activeFocusOnTab: true
                 onClicked: {
                     root.close();
                     root.discardRequested();
                 }
+                KeyNavigation.tab: saveButton
+                KeyNavigation.right: saveButton
+                KeyNavigation.left: cancelButton
+                KeyNavigation.backtab: cancelButton
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Enter || event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
+                        root.close();
+                        root.discardRequested();
+                        event.accepted = true;
+                    }
+                }
             }
 
             SquareDialogButton {
+                id: saveButton
                 text: "Save"
                 primary: true
                 darkMode: root.darkMode
                 activeColor: root.activeButtonColor
+                activeFocusOnTab: true
                 onClicked: {
                     root.close();
                     root.saveRequested();
                 }
+                KeyNavigation.tab: cancelButton
+                KeyNavigation.right: cancelButton
+                KeyNavigation.left: discardButton
+                KeyNavigation.backtab: discardButton
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Enter || event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
+                        root.close();
+                        root.saveRequested();
+                        event.accepted = true;
+                    }
+                }
             }
+        }
+    }
+
+    // Set initial focus to the save button (default action) when dialog opens
+    onOpened: {
+        saveButton.forceActiveFocus();
+    }
+
+    // Capture ESC key to close dialog
+    Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Escape) {
+            root.close();
+            event.accepted = true;
         }
     }
 }
