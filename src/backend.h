@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QFileSystemWatcher>
 #include <QObject>
 #include <QPointer>
 #include <QString>
@@ -19,9 +20,18 @@ class Backend : public QObject {
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
     Q_PROPERTY(int wordCount READ wordCount NOTIFY wordCountChanged)
     Q_PROPERTY(bool darkMode READ darkMode WRITE setDarkMode NOTIFY darkModeChanged)
+    Q_PROPERTY(QString themeBackground READ themeBackground NOTIFY themeColorsChanged)
+    Q_PROPERTY(QString themeForeground READ themeForeground NOTIFY themeColorsChanged)
+    Q_PROPERTY(QString themeAccent READ themeAccent NOTIFY themeColorsChanged)
+    Q_PROPERTY(QString themeSelection READ themeSelection NOTIFY themeColorsChanged)
 
 public:
     explicit Backend(FilePicker *filePicker, QObject *parent = nullptr);
+
+    QString themeBackground() const { return m_themeBackground; }
+    QString themeForeground() const { return m_themeForeground; }
+    QString themeAccent() const { return m_themeAccent; }
+    QString themeSelection() const { return m_themeSelection; }
 
     QString documentText() const { return m_documentText; }
     void setDocumentText(const QString &text);
@@ -52,9 +62,11 @@ signals:
     void statusChanged();
     void wordCountChanged();
     void darkModeChanged();
+    void themeColorsChanged();
     void closeAfterSave();
 
 private:
+    void loadOmarchyTheme();
     void setFileUrl(const QUrl &url);
     void setModified(bool modified);
     void setStatus(const QString &status);
@@ -84,4 +96,10 @@ private:
     QTimer m_wordCountTimer;
     QPointer<QTextDocument> m_document;
     QPointer<MarkdownHighlighter> m_highlighter;
+
+    QString m_themeBackground;
+    QString m_themeForeground;
+    QString m_themeAccent;
+    QString m_themeSelection;
+    QFileSystemWatcher m_themeWatcher;
 };

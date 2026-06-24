@@ -18,15 +18,26 @@ void MarkdownHighlighter::setDarkMode(bool darkMode) {
     rehighlight();
 }
 
+void MarkdownHighlighter::setColors(const QString &background, const QString &foreground, const QString &accent) {
+    m_customBg = background;
+    m_customFg = foreground;
+    m_customAccent = accent;
+    rebuildFormats();
+    rehighlight();
+}
+
 void MarkdownHighlighter::rebuildFormats() {
     const QColor marker = m_darkMode ? QColor(QStringLiteral("#4f525a"))
                                      : QColor(QStringLiteral("#aeb1b5"));
-    const QColor background = m_darkMode ? QColor(QStringLiteral("#101010"))
-                                         : QColor(QStringLiteral("#ffffff"));
-    const QColor text = m_darkMode ? QColor(QStringLiteral("#eeeeee"))
-                                   : QColor(QStringLiteral("#222324"));
-    const QColor link = m_darkMode ? QColor(QStringLiteral("#5584aa"))
-                                   : QColor(QStringLiteral("#2077b2"));
+    const QColor background = !m_customBg.isEmpty() ? QColor(m_customBg)
+                            : (m_darkMode ? QColor(QStringLiteral("#101010"))
+                                          : QColor(QStringLiteral("#ffffff")));
+    const QColor text = !m_customFg.isEmpty() ? QColor(m_customFg)
+                      : (m_darkMode ? QColor(QStringLiteral("#eeeeee"))
+                                    : QColor(QStringLiteral("#222324")));
+    const QColor link = !m_customAccent.isEmpty() ? QColor(m_customAccent)
+                      : (m_darkMode ? QColor(QStringLiteral("#5584aa"))
+                                    : QColor(QStringLiteral("#2077b2")));
     const QColor quote = marker;
     const QColor codeBackground = m_darkMode ? QColor(QStringLiteral("#1c1a1a"))
                                              : QColor(QStringLiteral("#f8f8f8"));

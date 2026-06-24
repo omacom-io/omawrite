@@ -1,6 +1,7 @@
 #include "backend.h"
 
 #include <QClipboard>
+#include <QColor>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -64,9 +65,42 @@ QString normalizedLinkUrl(const QString &clipboardText) {
 
 Backend::Backend(FilePicker *filePicker, QObject *parent)
     : QObject(parent), m_filePicker(filePicker) {
+    loadOmarchyTheme();
     m_wordCountTimer.setSingleShot(true);
     m_wordCountTimer.setInterval(120);
     connect(&m_wordCountTimer, &QTimer::timeout, this, &Backend::refreshWordCount);
+
+    // Watch the active theme file and directory paths for changes so we reload live
+    const QString currentDir = QDir::homePath() + QStringLiteral("/.config/omarchy/current");
+    const QString themeDir = currentDir + QStringLiteral("/theme");
+    const QString colorsPath = themeDir + QStringLiteral("/colors.toml");
+
+    auto updateWatcherPaths = [this, currentDir, themeDir, colorsPath]() {
+        QStringList paths = m_themeWatcher.files() + m_themeWatcher.directories();
+        if (!paths.isEmpty())
+            m_themeWatcher.removePaths(paths);
+
+        if (QDir(currentDir).exists())
+            m_themeWatcher.addPath(currentDir);
+        if (QDir(themeDir).exists())
+            m_themeWatcher.addPath(themeDir);
+        if (QFile::exists(colorsPath))
+            m_themeWatcher.addPath(colorsPath);
+    };
+
+    updateWatcherPaths();
+
+    // Connect file/directory modifications to reload the color theme dynamically
+    auto reloadCallback = [this, updateWatcherPaths]() {
+        loadOmarchyTheme();
+        if (m_highlighter)
+            m_highlighter->setColors(m_themeBackground, m_themeForeground, m_themeAccent);
+
+        updateWatcherPaths();
+    };
+
+    connect(&m_themeWatcher, &QFileSystemWatcher::fileChanged, this, reloadCallback);
+    connect(&m_themeWatcher, &QFileSystemWatcher::directoryChanged, this, reloadCallback);
 
     if (!m_filePicker)
         return;
@@ -117,12 +151,12 @@ QString Backend::fileName() const {
 }
 
 void Backend::setDarkMode(bool darkMode) {
-    if (m_darkMode == darkMode)
-        return;
-
     m_darkMode = darkMode;
-    if (m_highlighter)
+    loadOmarchyTheme();
+    if (m_highlighter) {
         m_highlighter->setDarkMode(m_darkMode);
+        m_highlighter->setColors(m_themeBackground, m_themeForeground, m_themeAccent);
+    }
     emit darkModeChanged();
 }
 
@@ -139,6 +173,7 @@ void Backend::attachDocument(QObject *textDocument) {
     m_document = quickDocument->textDocument();
     m_highlighter = new MarkdownHighlighter(m_document);
     m_highlighter->setDarkMode(m_darkMode);
+    m_highlighter->setColors(m_themeBackground, m_themeForeground, m_themeAccent);
 
     connect(m_document, &QTextDocument::contentsChange, this,
             [this](int position, int, int charsAdded) {
@@ -402,3 +437,60 @@ void Backend::reapplyTypographyToChange() {
     cursor.endEditBlock();
     m_formattingTypography = false;
 }
+
+void Backend::loadOmarchyTheme() {
+    // Set fallback colors first
+    m_themeBackground = m_darkMode ? QStringLiteral("#101010") : QStringLiteral("#ffffff");
+    m_themeForeground = m_darkMode ? QStringLiteral("#eeeeee") : QStringLiteral("#222324");
+    m_themeAccent = m_darkMode ? QStringLiteral("#5584aa") : QStringLiteral("#2077b2");
+    m_themeSelection = m_darkMode ? QStringLiteral("#186a9a") : QStringLiteral("#2077b2");
+
+    const QString themeColorsPath = QDir::homePath() + QStringLiteral("/.config/omarchy/current/theme/colors.toml");
+    QFile file(themeColorsPath);
+    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&file);
+        while (!in.atEnd()) {
+            QString line = in.readLine().trimmed();
+            if (line.isEmpty() || line.startsWith(QLatin1Char('#')))
+                continue;
+
+            QStringList parts = line.split(QLatin1Char('='));
+            if (parts.size() < 2)
+                continue;
+
+            QString key = parts.at(0).trimmed();
+            QString val = parts.at(1).trimmed();
+            // Remove enclosing quotes if any
+            if ((val.startsWith(QLatin1Char('"')) && val.endsWith(QLatin1Char('"'))) ||
+                (val.startsWith(QLatin1Char('\'')) && val.endsWith(QLatin1Char('\'')))) {
+                val = val.mid(1, val.length() - 2);
+            }
+
+            if (key == QStringLiteral("background"))
+                m_themeBackground = val;
+            else if (key == QStringLiteral("foreground"))
+                m_themeForeground = val;
+            else if (key == QStringLiteral("accent"))
+                m_themeAccent = val;
+            else if (key == QStringLiteral("selection_background"))
+                m_themeSelection = val;
+        }
+    }
+
+    // Determine whether the theme is dark based on the resolved background color
+    QColor bgColor(m_themeBackground);
+    if (bgColor.isValid()) {
+        double luminance = 0.299 * bgColor.redF() + 0.587 * bgColor.greenF() + 0.114 * bgColor.blueF();
+        bool isThemeDark = (luminance < 0.5);
+        if (isThemeDark != m_darkMode) {
+            m_darkMode = isThemeDark;
+            emit darkModeChanged();
+            if (m_highlighter) {
+                m_highlighter->setDarkMode(m_darkMode);
+            }
+        }
+    }
+
+    emit themeColorsChanged();
+}
+
