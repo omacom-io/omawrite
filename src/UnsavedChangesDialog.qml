@@ -133,12 +133,4 @@ Dialog {
     onOpened: {
         saveButton.forceActiveFocus();
     }
-
-    // Capture ESC key to close dialog
-    Keys.onPressed: function(event) {
-        if (event.key === Qt.Key_Escape) {
-            root.close();
-            event.accepted = true;
-        }
-    }
 }

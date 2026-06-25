@@ -3,6 +3,8 @@
 #include <QColor>
 #include <QFont>
 #include <QTextDocument>
+#include <QTextBlock>
+#include <QFontMetricsF>
 
 MarkdownHighlighter::MarkdownHighlighter(QTextDocument *document)
     : QSyntaxHighlighter(document) {
@@ -47,8 +49,22 @@ void MarkdownHighlighter::rebuildFormats() {
 
     m_hiddenMarkerFormat = QTextCharFormat();
     m_hiddenMarkerFormat.setForeground(background);
-    m_hiddenMarkerFormat.setFontPointSize(0.1);
-    m_hiddenMarkerFormat.setFontStretch(1);
+    m_hiddenMarkerFormat.setFontPointSize(1.0);
+
+    double charWidth = 1.0;
+    QFont fallbackFont = m_hiddenMarkerFormat.font();
+    fallbackFont.setPointSizeF(1.0);
+    QFontMetricsF fmFallback(fallbackFont);
+    charWidth = fmFallback.horizontalAdvance(QLatin1Char('['));
+
+    if (document()) {
+        QFont font = document()->defaultFont();
+        font.setPointSizeF(1.0);
+        QFontMetricsF fm(font);
+        charWidth = fm.horizontalAdvance(QLatin1Char('['));
+    }
+    m_hiddenMarkerFormat.setFontLetterSpacingType(QFont::AbsoluteSpacing);
+    m_hiddenMarkerFormat.setFontLetterSpacing(-charWidth);
 
     m_headingFormat = QTextCharFormat();
     m_headingFormat.setForeground(text);
