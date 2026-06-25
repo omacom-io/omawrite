@@ -3,6 +3,8 @@
 #include <QColor>
 #include <QFont>
 #include <QTextDocument>
+#include <QTextBlock>
+#include <QFontMetricsF>
 
 MarkdownHighlighter::MarkdownHighlighter(QTextDocument *document)
     : QSyntaxHighlighter(document) {
@@ -18,15 +20,26 @@ void MarkdownHighlighter::setDarkMode(bool darkMode) {
     rehighlight();
 }
 
+void MarkdownHighlighter::setColors(const QString &background, const QString &foreground, const QString &accent) {
+    m_customBg = background;
+    m_customFg = foreground;
+    m_customAccent = accent;
+    rebuildFormats();
+    rehighlight();
+}
+
 void MarkdownHighlighter::rebuildFormats() {
     const QColor marker = m_darkMode ? QColor(QStringLiteral("#4f525a"))
                                      : QColor(QStringLiteral("#aeb1b5"));
-    const QColor background = m_darkMode ? QColor(QStringLiteral("#101010"))
-                                         : QColor(QStringLiteral("#ffffff"));
-    const QColor text = m_darkMode ? QColor(QStringLiteral("#eeeeee"))
-                                   : QColor(QStringLiteral("#222324"));
-    const QColor link = m_darkMode ? QColor(QStringLiteral("#5584aa"))
-                                   : QColor(QStringLiteral("#2077b2"));
+    const QColor background = !m_customBg.isEmpty() ? QColor(m_customBg)
+                            : (m_darkMode ? QColor(QStringLiteral("#101010"))
+                                          : QColor(QStringLiteral("#ffffff")));
+    const QColor text = !m_customFg.isEmpty() ? QColor(m_customFg)
+                      : (m_darkMode ? QColor(QStringLiteral("#eeeeee"))
+                                    : QColor(QStringLiteral("#222324")));
+    const QColor link = !m_customAccent.isEmpty() ? QColor(m_customAccent)
+                      : (m_darkMode ? QColor(QStringLiteral("#5584aa"))
+                                    : QColor(QStringLiteral("#2077b2")));
     const QColor quote = marker;
     const QColor codeBackground = m_darkMode ? QColor(QStringLiteral("#1c1a1a"))
                                              : QColor(QStringLiteral("#f8f8f8"));
@@ -36,8 +49,22 @@ void MarkdownHighlighter::rebuildFormats() {
 
     m_hiddenMarkerFormat = QTextCharFormat();
     m_hiddenMarkerFormat.setForeground(background);
-    m_hiddenMarkerFormat.setFontPointSize(0.1);
-    m_hiddenMarkerFormat.setFontStretch(1);
+    m_hiddenMarkerFormat.setFontPointSize(1.0);
+
+    double charWidth = 1.0;
+    QFont fallbackFont = m_hiddenMarkerFormat.font();
+    fallbackFont.setPointSizeF(1.0);
+    QFontMetricsF fmFallback(fallbackFont);
+    charWidth = fmFallback.horizontalAdvance(QLatin1Char('['));
+
+    if (document()) {
+        QFont font = document()->defaultFont();
+        font.setPointSizeF(1.0);
+        QFontMetricsF fm(font);
+        charWidth = fm.horizontalAdvance(QLatin1Char('['));
+    }
+    m_hiddenMarkerFormat.setFontLetterSpacingType(QFont::AbsoluteSpacing);
+    m_hiddenMarkerFormat.setFontLetterSpacing(-charWidth);
 
     m_headingFormat = QTextCharFormat();
     m_headingFormat.setForeground(text);

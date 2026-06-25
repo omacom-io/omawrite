@@ -1,6 +1,7 @@
 #include "backend.h"
 
 #include <QClipboard>
+#include <QColor>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -11,11 +12,15 @@
 #include <QQuickTextDocument>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QPalette>
 #include <QTextBlockFormat>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextStream>
 #include <QUrl>
+#include <QDebug>
+#include <QSet>
+#include <QTextTable>
 
 #include "filepicker.h"
 #include "markdownhighlighter.h"
@@ -64,9 +69,42 @@ QString normalizedLinkUrl(const QString &clipboardText) {
 
 Backend::Backend(FilePicker *filePicker, QObject *parent)
     : QObject(parent), m_filePicker(filePicker) {
+    loadOmarchyTheme();
     m_wordCountTimer.setSingleShot(true);
     m_wordCountTimer.setInterval(120);
     connect(&m_wordCountTimer, &QTimer::timeout, this, &Backend::refreshWordCount);
+
+    // Watch the active theme file and directory paths for changes so we reload live
+    const QString currentDir = QDir::homePath() + QStringLiteral("/.config/omarchy/current");
+    const QString themeDir = currentDir + QStringLiteral("/theme");
+    const QString colorsPath = themeDir + QStringLiteral("/colors.toml");
+
+    auto updateWatcherPaths = [this, currentDir, themeDir, colorsPath]() {
+        QStringList paths = m_themeWatcher.files() + m_themeWatcher.directories();
+        if (!paths.isEmpty())
+            m_themeWatcher.removePaths(paths);
+
+        if (QDir(currentDir).exists())
+            m_themeWatcher.addPath(currentDir);
+        if (QDir(themeDir).exists())
+            m_themeWatcher.addPath(themeDir);
+        if (QFile::exists(colorsPath))
+            m_themeWatcher.addPath(colorsPath);
+    };
+
+    updateWatcherPaths();
+
+    // Connect file/directory modifications to reload the color theme dynamically
+    auto reloadCallback = [this, updateWatcherPaths]() {
+        loadOmarchyTheme();
+        if (m_highlighter)
+            m_highlighter->setColors(m_themeBackground, m_themeForeground, m_themeAccent);
+
+        updateWatcherPaths();
+    };
+
+    connect(&m_themeWatcher, &QFileSystemWatcher::fileChanged, this, reloadCallback);
+    connect(&m_themeWatcher, &QFileSystemWatcher::directoryChanged, this, reloadCallback);
 
     if (!m_filePicker)
         return;
@@ -117,12 +155,12 @@ QString Backend::fileName() const {
 }
 
 void Backend::setDarkMode(bool darkMode) {
-    if (m_darkMode == darkMode)
-        return;
-
     m_darkMode = darkMode;
-    if (m_highlighter)
+    loadOmarchyTheme();
+    if (m_highlighter) {
         m_highlighter->setDarkMode(m_darkMode);
+        m_highlighter->setColors(m_themeBackground, m_themeForeground, m_themeAccent);
+    }
     emit darkModeChanged();
 }
 
@@ -139,6 +177,7 @@ void Backend::attachDocument(QObject *textDocument) {
     m_document = quickDocument->textDocument();
     m_highlighter = new MarkdownHighlighter(m_document);
     m_highlighter->setDarkMode(m_darkMode);
+    m_highlighter->setColors(m_themeBackground, m_themeForeground, m_themeAccent);
 
     connect(m_document, &QTextDocument::contentsChange, this,
             [this](int position, int, int charsAdded) {
@@ -149,6 +188,96 @@ void Backend::attachDocument(QObject *textDocument) {
             });
 
     applyDocumentTypography();
+}
+
+void Backend::attachPreviewDocument(QObject *textDocument) {
+    auto *quickDocument = qobject_cast<QQuickTextDocument *>(textDocument);
+    if (!quickDocument || !quickDocument->textDocument())
+        return;
+
+    m_previewDocument = quickDocument->textDocument();
+    
+    // Connect to contentsChanged to ensure layout updates are reformatted
+    connect(m_previewDocument, &QTextDocument::contentsChanged, this, &Backend::formatPreviewDocument, Qt::UniqueConnection);
+
+    updatePreviewStyleSheet();
+    formatPreviewDocument();
+}
+
+void Backend::updatePreviewStyleSheet() {
+    if (!m_previewDocument)
+        return;
+
+    QString styleSheet = QStringLiteral(
+        "a { color: %1; text-decoration: underline; }"
+        "h1, h2, h3, h4, h5, h6 { margin-top: 1.2em; margin-bottom: 0.6em; }"
+        "p { margin-top: 0px; margin-bottom: 1.0em; }"
+        "hr { margin-top: 1.5em; margin-bottom: 1.5em; }"
+        "blockquote { margin-top: 1.0em; margin-bottom: 1.0em; }"
+        "ul, ol { margin-top: 0px; margin-bottom: 1.0em; }"
+        "li { margin-top: 0.2em; margin-bottom: 0.2em; }"
+        "table { border-collapse: collapse; width: 100%; margin-top: 1.2em; margin-bottom: 1.2em; }"
+        "th, td { border: 1px solid %2; padding: 6px; text-align: left; }"
+        "th { font-weight: bold; background-color: %3; }"
+    ).arg(m_themeAccent, m_themeForeground, m_themeBackground);
+
+    m_previewDocument->setDefaultStyleSheet(styleSheet);
+}
+
+void Backend::formatPreviewDocument() {
+    if (!m_previewDocument)
+        return;
+
+    // Block signals to avoid recursion when changing block formats
+    m_previewDocument->blockSignals(true);
+
+    QSet<QTextTable *> formattedTables;
+
+    for (QTextBlock block = m_previewDocument->begin(); block.isValid(); block = block.next()) {
+        QTextCursor cursor(block);
+        // If the block is part of a table, format the table margins and reset the cell block margins
+        if (QTextTable *table = cursor.currentTable()) {
+            if (!formattedTables.contains(table)) {
+                QTextTableFormat tableFormat = table->format();
+                tableFormat.setTopMargin(16);
+                tableFormat.setBottomMargin(16);
+                table->setFormat(tableFormat);
+                formattedTables.insert(table);
+            }
+
+            QTextBlockFormat format = block.blockFormat();
+            format.setTopMargin(0);
+            format.setBottomMargin(0);
+            cursor.setBlockFormat(format);
+            continue;
+        }
+
+        QTextBlockFormat format = block.blockFormat();
+        int heading = format.headingLevel();
+        bool isList = block.textList() != nullptr;
+        QString text = block.text().trimmed();
+
+        qreal topMargin = 0;
+        qreal bottomMargin = 12; // default paragraph spacing
+
+        if (heading > 0) {
+            topMargin = 20;
+            bottomMargin = 10;
+        } else if (isList) {
+            topMargin = 2;
+            bottomMargin = 2;
+        } else if (text == "---" || text.isEmpty()) {
+            topMargin = 16;
+            bottomMargin = 16;
+        }
+
+        format.setTopMargin(topMargin);
+        format.setBottomMargin(bottomMargin);
+
+        cursor.setBlockFormat(format);
+    }
+
+    m_previewDocument->blockSignals(false);
 }
 
 void Backend::openDialog() {
@@ -402,3 +531,65 @@ void Backend::reapplyTypographyToChange() {
     cursor.endEditBlock();
     m_formattingTypography = false;
 }
+
+void Backend::loadOmarchyTheme() {
+    // Set fallback colors first
+    m_themeBackground = m_darkMode ? QStringLiteral("#101010") : QStringLiteral("#ffffff");
+    m_themeForeground = m_darkMode ? QStringLiteral("#eeeeee") : QStringLiteral("#222324");
+    m_themeAccent = m_darkMode ? QStringLiteral("#5584aa") : QStringLiteral("#2077b2");
+    m_themeSelection = m_darkMode ? QStringLiteral("#186a9a") : QStringLiteral("#2077b2");
+
+    const QString themeColorsPath = QDir::homePath() + QStringLiteral("/.config/omarchy/current/theme/colors.toml");
+    QFile file(themeColorsPath);
+    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&file);
+        while (!in.atEnd()) {
+            QString line = in.readLine().trimmed();
+            if (line.isEmpty() || line.startsWith(QLatin1Char('#')))
+                continue;
+
+            QStringList parts = line.split(QLatin1Char('='));
+            if (parts.size() < 2)
+                continue;
+
+            QString key = parts.at(0).trimmed();
+            QString val = parts.at(1).trimmed();
+            // Remove enclosing quotes if any
+            if ((val.startsWith(QLatin1Char('"')) && val.endsWith(QLatin1Char('"'))) ||
+                (val.startsWith(QLatin1Char('\'')) && val.endsWith(QLatin1Char('\'')))) {
+                val = val.mid(1, val.length() - 2);
+            }
+
+            if (key == QStringLiteral("background"))
+                m_themeBackground = val;
+            else if (key == QStringLiteral("foreground"))
+                m_themeForeground = val;
+            else if (key == QStringLiteral("accent"))
+                m_themeAccent = val;
+            else if (key == QStringLiteral("selection_background"))
+                m_themeSelection = val;
+        }
+    }
+
+    // Determine whether the theme is dark based on the resolved background color
+    QColor bgColor(m_themeBackground);
+    if (bgColor.isValid()) {
+        double luminance = 0.299 * bgColor.redF() + 0.587 * bgColor.greenF() + 0.114 * bgColor.blueF();
+        bool isThemeDark = (luminance < 0.5);
+        if (isThemeDark != m_darkMode) {
+            m_darkMode = isThemeDark;
+            emit darkModeChanged();
+            if (m_highlighter) {
+                m_highlighter->setDarkMode(m_darkMode);
+            }
+        }
+    }
+
+    QPalette appPalette = QGuiApplication::palette();
+    appPalette.setColor(QPalette::Link, QColor(m_themeAccent));
+    QGuiApplication::setPalette(appPalette);
+
+    updatePreviewStyleSheet();
+    emit themeColorsChanged();
+}
+

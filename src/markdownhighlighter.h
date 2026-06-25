@@ -11,6 +11,7 @@ public:
     explicit MarkdownHighlighter(QTextDocument *document);
 
     void setDarkMode(bool darkMode);
+    void setColors(const QString &background, const QString &foreground, const QString &accent);
 
 protected:
     void highlightBlock(const QString &text) override;
@@ -21,6 +22,9 @@ private:
     void highlightInline(const QString &text);
 
     bool m_darkMode = true;
+    QString m_customBg;
+    QString m_customFg;
+    QString m_customAccent;
     QTextCharFormat m_markerFormat;
     QTextCharFormat m_hiddenMarkerFormat;
     QTextCharFormat m_headingFormat;

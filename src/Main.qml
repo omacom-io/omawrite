@@ -13,11 +13,11 @@ ApplicationWindow {
     title: (backend.modified ? "* " : "") + backend.fileName + " - Omawrite"
 
     readonly property bool darkMode: backend.darkMode
-    readonly property color pageColor: darkMode ? "#101010" : "#ffffff"
-    readonly property color textColor: darkMode ? "#d0d0d0" : "#42464c"
-    readonly property color strongTextColor: darkMode ? "#eeeeee" : "#222324"
+    readonly property color pageColor: backend.themeBackground
+    readonly property color textColor: backend.themeForeground
+    readonly property color strongTextColor: backend.themeForeground
     readonly property color mutedColor: darkMode ? "#909191" : "#aeb1b5"
-    readonly property color selectionFill: darkMode ? "#186a9a" : "#2077b2"
+    readonly property color selectionFill: backend.themeSelection
     readonly property int editorFontPixelSize: 20
     readonly property int editorWidth: Math.min(
         Math.round(writerFontMetrics.averageCharacterWidth * 65),
@@ -26,7 +26,7 @@ ApplicationWindow {
     property bool closeConfirmed: false
 
     Material.theme: darkMode ? Material.Dark : Material.Light
-    Material.accent: darkMode ? "#5584aa" : "#2077b2"
+    Material.accent: backend.themeAccent
     color: pageColor
 
     onClosing: function(close) {
@@ -134,6 +134,7 @@ ApplicationWindow {
         darkMode: win.darkMode
         textColor: win.textColor
         strongTextColor: win.strongTextColor
+        activeButtonColor: backend.themeAccent
         containerWidth: win.width
         containerHeight: win.height
 
@@ -475,6 +476,19 @@ ApplicationWindow {
                 font.pixelSize: win.editorFontPixelSize
                 font.weight: Font.Normal
                 renderType: TextEdit.NativeRendering
+                palette.link: backend.themeAccent
+                palette.text: win.textColor
+                palette.windowText: win.textColor
+                palette.window: backend.themeBackground
+                palette.base: backend.themeBackground
+
+                onTextChanged: {
+                    backend.attachPreviewDocument(textDocument);
+                }
+
+                Component.onCompleted: {
+                    backend.attachPreviewDocument(textDocument);
+                }
             }
         }
 

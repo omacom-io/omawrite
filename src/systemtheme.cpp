@@ -93,20 +93,19 @@ void SystemTheme::handlePortalSettingChanged(const QString &nameSpace, const QSt
 bool SystemTheme::detectDarkMode() const {
     bool known = false;
 
-    const bool portalDark = portalDarkMode(&known);
-    if (known)
-        return portalDark;
-
-    // Prefer the non-blocking Qt color-scheme hint before falling back to the
-    // gsettings subprocess, which blocks this (UI) thread while it runs.
+    // Prefer the non-blocking Qt color-scheme hint first, as it is instantaneous
+    // and does not require IPC or subprocesses.
     const bool qtDark = qtDarkMode(&known);
     if (known)
         return qtDark;
 
-    const bool gsettingsDark = gsettingsDarkMode(&known);
+    // Next, query the D-Bus desktop appearance portal settings.
+    const bool portalDark = portalDarkMode(&known);
     if (known)
-        return gsettingsDark;
+        return portalDark;
 
+    // We avoid falling back to the blocking gsettings QProcess subprocess call on
+    // the main GUI thread, as it can block the event loop and freeze the UI.
     return true;
 }
 
@@ -118,6 +117,8 @@ bool SystemTheme::portalDarkMode(bool *known) const {
                             QStringLiteral("org.freedesktop.portal.Settings"));
     if (!settings.isValid())
         return false;
+
+    settings.setTimeout(150); // Prevent GUI thread freeze if portal service hangs
 
     QDBusReply<QDBusVariant> reply = settings.call(
         QStringLiteral("Read"),

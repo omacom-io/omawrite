@@ -28,6 +28,9 @@ void loadWriterFonts() {
 }
 
 int main(int argc, char *argv[]) {
+    // Force basic render loop to prevent threaded OpenGL/driver deadlocks on AMDGPU + Wayland (Hyprland)
+    qputenv("QSG_RENDER_LOOP", "basic");
+
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omawrite"));
     app.setDesktopFileName(QStringLiteral("omawrite"));
