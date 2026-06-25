@@ -482,6 +482,10 @@ ApplicationWindow {
                 palette.window: backend.themeBackground
                 palette.base: backend.themeBackground
 
+                onTextChanged: {
+                    backend.attachPreviewDocument(textDocument);
+                }
+
                 Component.onCompleted: {
                     backend.attachPreviewDocument(textDocument);
                 }

@@ -81,6 +81,7 @@ private:
     void applyDocumentTypography();
     void reapplyTypographyToChange();
     void updatePreviewStyleSheet();
+    void formatPreviewDocument();
 
     FilePicker *m_filePicker = nullptr;
     QString m_documentText;

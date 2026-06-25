@@ -19,6 +19,8 @@
 #include <QTextStream>
 #include <QUrl>
 #include <QDebug>
+#include <QSet>
+#include <QTextTable>
 
 #include "filepicker.h"
 #include "markdownhighlighter.h"
@@ -194,7 +196,12 @@ void Backend::attachPreviewDocument(QObject *textDocument) {
         return;
 
     m_previewDocument = quickDocument->textDocument();
+    
+    // Connect to contentsChanged to ensure layout updates are reformatted
+    connect(m_previewDocument, &QTextDocument::contentsChanged, this, &Backend::formatPreviewDocument, Qt::UniqueConnection);
+
     updatePreviewStyleSheet();
+    formatPreviewDocument();
 }
 
 void Backend::updatePreviewStyleSheet() {
@@ -203,12 +210,74 @@ void Backend::updatePreviewStyleSheet() {
 
     QString styleSheet = QStringLiteral(
         "a { color: %1; text-decoration: underline; }"
-        "table { border-collapse: collapse; width: 100%; margin-top: 10px; margin-bottom: 10px; }"
+        "h1, h2, h3, h4, h5, h6 { margin-top: 1.2em; margin-bottom: 0.6em; }"
+        "p { margin-top: 0px; margin-bottom: 1.0em; }"
+        "hr { margin-top: 1.5em; margin-bottom: 1.5em; }"
+        "blockquote { margin-top: 1.0em; margin-bottom: 1.0em; }"
+        "ul, ol { margin-top: 0px; margin-bottom: 1.0em; }"
+        "li { margin-top: 0.2em; margin-bottom: 0.2em; }"
+        "table { border-collapse: collapse; width: 100%; margin-top: 1.2em; margin-bottom: 1.2em; }"
         "th, td { border: 1px solid %2; padding: 6px; text-align: left; }"
         "th { font-weight: bold; background-color: %3; }"
     ).arg(m_themeAccent, m_themeForeground, m_themeBackground);
 
     m_previewDocument->setDefaultStyleSheet(styleSheet);
+}
+
+void Backend::formatPreviewDocument() {
+    if (!m_previewDocument)
+        return;
+
+    // Block signals to avoid recursion when changing block formats
+    m_previewDocument->blockSignals(true);
+
+    QSet<QTextTable *> formattedTables;
+
+    for (QTextBlock block = m_previewDocument->begin(); block.isValid(); block = block.next()) {
+        QTextCursor cursor(block);
+        // If the block is part of a table, format the table margins and reset the cell block margins
+        if (QTextTable *table = cursor.currentTable()) {
+            if (!formattedTables.contains(table)) {
+                QTextTableFormat tableFormat = table->format();
+                tableFormat.setTopMargin(16);
+                tableFormat.setBottomMargin(16);
+                table->setFormat(tableFormat);
+                formattedTables.insert(table);
+            }
+
+            QTextBlockFormat format = block.blockFormat();
+            format.setTopMargin(0);
+            format.setBottomMargin(0);
+            cursor.setBlockFormat(format);
+            continue;
+        }
+
+        QTextBlockFormat format = block.blockFormat();
+        int heading = format.headingLevel();
+        bool isList = block.textList() != nullptr;
+        QString text = block.text().trimmed();
+
+        qreal topMargin = 0;
+        qreal bottomMargin = 12; // default paragraph spacing
+
+        if (heading > 0) {
+            topMargin = 20;
+            bottomMargin = 10;
+        } else if (isList) {
+            topMargin = 2;
+            bottomMargin = 2;
+        } else if (text == "---" || text.isEmpty()) {
+            topMargin = 16;
+            bottomMargin = 16;
+        }
+
+        format.setTopMargin(topMargin);
+        format.setBottomMargin(bottomMargin);
+
+        cursor.setBlockFormat(format);
+    }
+
+    m_previewDocument->blockSignals(false);
 }
 
 void Backend::openDialog() {
