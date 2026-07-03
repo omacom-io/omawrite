@@ -14,6 +14,9 @@ Button {
     topPadding: 7
     bottomPadding: 7
 
+    Keys.onReturnPressed: clicked()
+    Keys.onEnterPressed: clicked()
+
     contentItem: Label {
         text: control.text
         color: control.labelColor
@@ -34,8 +37,10 @@ Button {
                 : control.hovered
                     ? (control.darkMode ? "#242424" : "#eeeeee")
                     : (control.darkMode ? "#202020" : "#f6f6f6")
-        border.color: control.primary
-            ? "#367eb7"
-            : (control.darkMode ? "#424242" : "#c8c8c8")
+        border.color: control.activeFocus
+            ? (control.darkMode ? "#eeeeee" : "#222324")
+            : control.primary
+                ? "#367eb7"
+                : (control.darkMode ? "#424242" : "#c8c8c8")
     }
 }

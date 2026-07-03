@@ -17,7 +17,9 @@ Dialog {
 
     modal: true
     focus: true
-    closePolicy: Popup.NoAutoClose
+    closePolicy: Popup.CloseOnEscape
+
+    onOpened: saveButton.forceActiveFocus()
     width: Math.min(420, containerWidth - 48)
     x: Math.round((containerWidth - width) / 2)
     y: Math.round((containerHeight - height) / 2)
@@ -61,16 +63,26 @@ Dialog {
             spacing: 8
 
             SquareDialogButton {
+                id: cancelButton
                 text: "Cancel"
                 darkMode: root.darkMode
                 labelColor: root.textColor
+                KeyNavigation.left: saveButton
+                KeyNavigation.right: discardButton
+                KeyNavigation.tab: discardButton
+                KeyNavigation.backtab: saveButton
                 onClicked: root.close()
             }
 
             SquareDialogButton {
+                id: discardButton
                 text: "Discard"
                 darkMode: root.darkMode
                 labelColor: root.textColor
+                KeyNavigation.left: cancelButton
+                KeyNavigation.right: saveButton
+                KeyNavigation.tab: saveButton
+                KeyNavigation.backtab: cancelButton
                 onClicked: {
                     root.close();
                     root.discardRequested();
@@ -78,10 +90,15 @@ Dialog {
             }
 
             SquareDialogButton {
+                id: saveButton
                 text: "Save"
                 primary: true
                 darkMode: root.darkMode
                 activeColor: root.activeButtonColor
+                KeyNavigation.left: discardButton
+                KeyNavigation.right: cancelButton
+                KeyNavigation.tab: cancelButton
+                KeyNavigation.backtab: discardButton
                 onClicked: {
                     root.close();
                     root.saveRequested();
