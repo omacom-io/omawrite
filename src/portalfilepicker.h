@@ -1,17 +1,23 @@
 #pragma once
 
+#include <QObject>
+#include <QUrl>
 #include <QVariantMap>
 
-#include "filepicker.h"
-
-class PortalFilePicker : public FilePicker {
+class PortalFilePicker : public QObject {
     Q_OBJECT
 
 public:
     explicit PortalFilePicker(QObject *parent = nullptr);
 
-    void openDocument() override;
-    void saveDocument(const QUrl &suggestedUrl) override;
+    void openDocument();
+    void saveDocument(const QUrl &suggestedUrl);
+
+signals:
+    void openSelected(const QUrl &url);
+    void saveSelected(const QUrl &url);
+    void canceled();
+    void failed(const QString &message);
 
 private slots:
     void handleResponse(uint response, const QVariantMap &results);

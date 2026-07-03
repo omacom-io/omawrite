@@ -1,5 +1,4 @@
 #include <QFont>
-#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QIcon>
 #include <QQmlApplicationEngine>
@@ -11,29 +10,12 @@
 #include "portalfilepicker.h"
 #include "systemtheme.h"
 
-namespace {
-void loadWriterFonts() {
-    const QString base = QStringLiteral("/usr/share/fonts/ttf-ia-writer/");
-    const QStringList files = {
-        QStringLiteral("iAWriterMonoS-Regular.ttf"),
-        QStringLiteral("iAWriterMonoS-Italic.ttf"),
-        QStringLiteral("iAWriterMonoS-Bold.ttf"),
-        QStringLiteral("iAWriterMonoS-BoldItalic.ttf")
-    };
-
-    for (const QString &file : files)
-        QFontDatabase::addApplicationFont(base + file);
-}
-
-}
-
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omawrite"));
     app.setDesktopFileName(QStringLiteral("omawrite"));
     app.setWindowIcon(QIcon::fromTheme(QStringLiteral("omawrite")));
 
-    loadWriterFonts();
     app.setFont(QFont(QStringLiteral("iA Writer Mono S")));
 
     QQuickStyle::setStyle(QStringLiteral("Material"));

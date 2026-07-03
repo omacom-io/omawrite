@@ -5,7 +5,6 @@
 #include <QDBusReply>
 #include <QDBusVariant>
 #include <QGuiApplication>
-#include <QProcess>
 #include <QStyleHints>
 #include <QVariant>
 
@@ -97,15 +96,9 @@ bool SystemTheme::detectDarkMode() const {
     if (known)
         return portalDark;
 
-    // Prefer the non-blocking Qt color-scheme hint before falling back to the
-    // gsettings subprocess, which blocks this (UI) thread while it runs.
     const bool qtDark = qtDarkMode(&known);
     if (known)
         return qtDark;
-
-    const bool gsettingsDark = gsettingsDarkMode(&known);
-    if (known)
-        return gsettingsDark;
 
     return true;
 }
@@ -127,35 +120,6 @@ bool SystemTheme::portalDarkMode(bool *known) const {
         return false;
 
     return colorSchemeIsDark(reply.value().variant(), known);
-}
-
-bool SystemTheme::gsettingsDarkMode(bool *known) const {
-    *known = false;
-
-    QProcess gsettings;
-    gsettings.start(QStringLiteral("gsettings"), {
-        QStringLiteral("get"),
-        QStringLiteral("org.gnome.desktop.interface"),
-        QStringLiteral("color-scheme")
-    });
-
-    if (!gsettings.waitForFinished(150)) {
-        gsettings.kill();
-        gsettings.waitForFinished(50);
-        return false;
-    }
-
-    const QString output = QString::fromUtf8(gsettings.readAllStandardOutput()).trimmed();
-    if (output.contains(QStringLiteral("prefer-dark"))) {
-        *known = true;
-        return true;
-    }
-    if (output.contains(QStringLiteral("prefer-light"))) {
-        *known = true;
-        return false;
-    }
-
-    return false;
 }
 
 bool SystemTheme::qtDarkMode(bool *known) const {

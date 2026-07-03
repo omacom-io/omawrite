@@ -25,7 +25,6 @@ private slots:
 private:
     bool detectDarkMode() const;
     bool portalDarkMode(bool *known) const;
-    bool gsettingsDarkMode(bool *known) const;
     bool qtDarkMode(bool *known) const;
     void setDarkMode(bool darkMode);
 

@@ -123,13 +123,7 @@ void MarkdownHighlighter::highlightMarkers(const QString &text) {
 }
 
 void MarkdownHighlighter::highlightInline(const QString &text) {
-    const bool hasBacktick = text.contains(QLatin1Char('`'));
-    const bool hasAsterisk = text.contains(QLatin1Char('*'));
-    const bool hasUnderscore = text.contains(QLatin1Char('_'));
-    const bool hasLink = text.contains(QLatin1Char('['))
-        && text.contains(QStringLiteral("]("));
-
-    if (hasBacktick) {
+    if (text.contains(QLatin1Char('`'))) {
         static const QRegularExpression codeRe(QStringLiteral("`([^`]+)`"));
         QRegularExpressionMatchIterator codeMatches = codeRe.globalMatch(text);
         while (codeMatches.hasNext()) {
@@ -138,44 +132,60 @@ void MarkdownHighlighter::highlightInline(const QString &text) {
         }
     }
 
-    if (hasAsterisk || hasUnderscore) {
-        static const QRegularExpression boldRe(QStringLiteral("(\\*\\*|__)(.+?)(\\1)"));
-        QRegularExpressionMatchIterator boldMatches = boldRe.globalMatch(text);
-        while (boldMatches.hasNext()) {
-            const QRegularExpressionMatch match = boldMatches.next();
-            setFormat(match.capturedStart(1), match.capturedLength(1), m_hiddenMarkerFormat);
-            setFormat(match.capturedStart(2), match.capturedLength(2), m_boldFormat);
-            setFormat(match.capturedStart(3), match.capturedLength(3), m_hiddenMarkerFormat);
-        }
+    const QList<InlineMarkup> markup = inlineMarkup(text);
+    for (const InlineMarkup &item : markup) {
+        const QTextCharFormat &contentFormat =
+            item.kind == InlineKind::Bold ? m_boldFormat
+            : item.kind == InlineKind::Italic ? m_italicFormat
+                                              : m_linkFormat;
+        setFormat(item.content.start, item.content.length, contentFormat);
+        for (const Span &marker : item.markers)
+            setFormat(marker.start, marker.length, m_hiddenMarkerFormat);
+    }
+}
 
-        static const QRegularExpression italicRe(
-            QStringLiteral("(?<!\\*)\\*([^*\\n]+)\\*(?!\\*)|(?<!_)_([^_\\n]+)_(?!_)"));
-        QRegularExpressionMatchIterator italicMatches = italicRe.globalMatch(text);
-        while (italicMatches.hasNext()) {
-            const QRegularExpressionMatch match = italicMatches.next();
-            const int contentIndex = match.capturedStart(1) >= 0 ? 1 : 2;
-            setFormat(match.capturedStart(0), 1, m_hiddenMarkerFormat);
-            setFormat(match.capturedStart(contentIndex), match.capturedLength(contentIndex),
-                      m_italicFormat);
-            setFormat(match.capturedStart(0) + match.capturedLength(0) - 1, 1,
-                      m_hiddenMarkerFormat);
-        }
+QList<MarkdownHighlighter::InlineMarkup> MarkdownHighlighter::inlineMarkup(const QString &text) {
+    QList<InlineMarkup> markup;
+    if (!text.contains(QLatin1Char('*')) && !text.contains(QLatin1Char('_'))
+            && !text.contains(QLatin1Char('['))) {
+        return markup;
     }
 
-    if (!hasLink)
-        return;
+    const auto span = [](const QRegularExpressionMatch &match, int group) {
+        return Span{int(match.capturedStart(group)), int(match.capturedLength(group))};
+    };
+
+    static const QRegularExpression boldRe(QStringLiteral("(\\*\\*|__)(.+?)(\\1)"));
+    QRegularExpressionMatchIterator boldMatches = boldRe.globalMatch(text);
+    while (boldMatches.hasNext()) {
+        const QRegularExpressionMatch match = boldMatches.next();
+        markup.append({InlineKind::Bold, span(match, 2),
+                       {span(match, 1), span(match, 3)}});
+    }
+
+    static const QRegularExpression italicRe(
+        QStringLiteral("(?<!\\*)\\*([^*\\n]+)\\*(?!\\*)|(?<!_)_([^_\\n]+)_(?!_)"));
+    QRegularExpressionMatchIterator italicMatches = italicRe.globalMatch(text);
+    while (italicMatches.hasNext()) {
+        const QRegularExpressionMatch match = italicMatches.next();
+        const Span whole = span(match, 0);
+        const int contentIndex = match.capturedStart(1) >= 0 ? 1 : 2;
+        markup.append({InlineKind::Italic, span(match, contentIndex),
+                       {{whole.start, 1}, {whole.start + whole.length - 1, 1}}});
+    }
 
     static const QRegularExpression linkRe(
         QStringLiteral("\\[([^\\]]+)\\]\\(((?:\\\\.|[^)])+)\\)"));
     QRegularExpressionMatchIterator linkMatches = linkRe.globalMatch(text);
     while (linkMatches.hasNext()) {
         const QRegularExpressionMatch match = linkMatches.next();
-        setFormat(match.capturedStart(0), 1, m_hiddenMarkerFormat);
-        setFormat(match.capturedStart(1), match.capturedLength(1), m_linkFormat);
-        setFormat(match.capturedStart(1) + match.capturedLength(1), 2,
-                  m_hiddenMarkerFormat);
-        setFormat(match.capturedStart(2), match.capturedLength(2), m_hiddenMarkerFormat);
-        setFormat(match.capturedStart(0) + match.capturedLength(0) - 1, 1,
-                  m_hiddenMarkerFormat);
+        const Span whole = span(match, 0);
+        const Span content = span(match, 1);
+        const int contentEnd = content.start + content.length;
+        markup.append({InlineKind::Link, content,
+                       {{whole.start, 1},
+                        {contentEnd, whole.start + whole.length - contentEnd}}});
     }
+
+    return markup;
 }

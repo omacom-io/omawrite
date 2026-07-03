@@ -6,7 +6,6 @@ TEMPLATE = app
 
 HEADERS += \
     src/backend.h \
-    src/filepicker.h \
     src/markdownhighlighter.h \
     src/portalfilepicker.h \
     src/systemtheme.h

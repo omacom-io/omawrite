@@ -33,7 +33,7 @@ QByteArray portalPathBytes(const QString &path) {
 }
 }
 
-PortalFilePicker::PortalFilePicker(QObject *parent) : FilePicker(parent) {}
+PortalFilePicker::PortalFilePicker(QObject *parent) : QObject(parent) {}
 
 void PortalFilePicker::openDocument() {
     QVariantMap options;

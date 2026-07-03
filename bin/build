@@ -13,13 +13,7 @@ else
   exit 1
 fi
 
-if command -v nproc >/dev/null 2>&1; then
-  JOBS="$(nproc)"
-elif command -v sysctl >/dev/null 2>&1; then
-  JOBS="$(sysctl -n hw.ncpu 2>/dev/null || echo 1)"
-else
-  JOBS=1
-fi
+JOBS="$(nproc 2>/dev/null || echo 1)"
 
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"

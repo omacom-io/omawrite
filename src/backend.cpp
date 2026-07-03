@@ -11,25 +11,25 @@
 #include <QQuickTextDocument>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QTextBlock>
 #include <QTextBlockFormat>
 #include <QTextCursor>
 #include <QTextDocument>
-#include <QTextStream>
 #include <QUrl>
+#include <QVariantMap>
 
-#include "filepicker.h"
+#include <algorithm>
+
 #include "markdownhighlighter.h"
+#include "portalfilepicker.h"
 
 namespace {
 constexpr qreal typoraLineHeightPercent = 140;
 
 QString normalizedLinkUrl(const QString &clipboardText) {
     QString candidate = clipboardText.trimmed();
-    const int newline = candidate.indexOf(QLatin1Char('\n'));
-    const int carriageReturn = candidate.indexOf(QLatin1Char('\r'));
-    int lineBreak = newline;
-    if (lineBreak < 0 || (carriageReturn >= 0 && carriageReturn < lineBreak))
-        lineBreak = carriageReturn;
+    static const QRegularExpression lineBreakRe(QStringLiteral("[\\r\\n]"));
+    const int lineBreak = candidate.indexOf(lineBreakRe);
     if (lineBreak >= 0)
         candidate = candidate.left(lineBreak).trimmed();
 
@@ -62,44 +62,21 @@ QString normalizedLinkUrl(const QString &clipboardText) {
 }
 }
 
-Backend::Backend(FilePicker *filePicker, QObject *parent)
+Backend::Backend(PortalFilePicker *filePicker, QObject *parent)
     : QObject(parent), m_filePicker(filePicker) {
     m_wordCountTimer.setSingleShot(true);
     m_wordCountTimer.setInterval(120);
     connect(&m_wordCountTimer, &QTimer::timeout, this, &Backend::refreshWordCount);
 
-    if (!m_filePicker)
-        return;
-
-    connect(m_filePicker, &FilePicker::openSelected, this, &Backend::open);
-    connect(m_filePicker, &FilePicker::saveSelected, this, &Backend::saveTo);
-    connect(m_filePicker, &FilePicker::canceled, this, [this]() {
+    connect(m_filePicker, &PortalFilePicker::openSelected, this, &Backend::open);
+    connect(m_filePicker, &PortalFilePicker::saveSelected, this, &Backend::saveTo);
+    connect(m_filePicker, &PortalFilePicker::canceled, this, [this]() {
         m_closeAfterSave = false;
     });
-    connect(m_filePicker, &FilePicker::failed, this, [this](const QString &message) {
+    connect(m_filePicker, &PortalFilePicker::failed, this, [this](const QString &message) {
         m_closeAfterSave = false;
         setStatus(message);
     });
-}
-
-void Backend::setDocumentText(const QString &text) {
-    if (m_documentText == text && (!m_document || m_document->toPlainText() == text))
-        return;
-
-    m_documentText = text;
-    emit documentTextChanged();
-    applyDocumentTypography();
-
-    if (m_loading) {
-        if (m_wordCountTimer.isActive())
-            m_wordCountTimer.stop();
-        setWordCount(countWords(m_documentText));
-    }
-    else
-        scheduleWordCount();
-
-    if (!m_loading)
-        setModified(true);
 }
 
 QString Backend::fileName() const {
@@ -152,8 +129,7 @@ void Backend::attachDocument(QObject *textDocument) {
 }
 
 void Backend::openDialog() {
-    if (m_filePicker)
-        m_filePicker->openDocument();
+    m_filePicker->openDocument();
 }
 
 void Backend::open(const QUrl &url) {
@@ -169,10 +145,7 @@ void Backend::open(const QUrl &url) {
         return;
     }
 
-    const QByteArray bytes = file.readAll();
-    m_loading = true;
-    setDocumentText(QString::fromUtf8(bytes));
-    m_loading = false;
+    loadDocumentText(QString::fromUtf8(file.readAll()));
     setFileUrl(url);
     setModified(false);
     setStatus(QStringLiteral("Opened %1").arg(fileName()));
@@ -198,12 +171,6 @@ void Backend::saveForClose() {
 }
 
 void Backend::saveAsDialog() {
-    if (!m_filePicker) {
-        m_closeAfterSave = false;
-        setStatus(QStringLiteral("No file picker is available."));
-        return;
-    }
-
     m_filePicker->saveDocument(suggestedSaveUrl());
 }
 
@@ -253,6 +220,50 @@ void Backend::editorTextChanged() {
     setModified(true);
 }
 
+QVariantList Backend::hiddenRangesAt(int position) const {
+    QVariantList ranges;
+    if (!m_document)
+        return ranges;
+
+    const QTextBlock block =
+        m_document->findBlock(qBound(0, position, m_document->characterCount() - 1));
+    if (!block.isValid())
+        return ranges;
+
+    const int lineStart = block.position();
+    QList<QPair<int, int>> spans;
+    const QList<MarkdownHighlighter::InlineMarkup> markup =
+        MarkdownHighlighter::inlineMarkup(block.text());
+    for (const MarkdownHighlighter::InlineMarkup &item : markup) {
+        for (const MarkdownHighlighter::Span &marker : item.markers) {
+            spans.append({lineStart + marker.start,
+                          lineStart + marker.start + marker.length});
+        }
+    }
+    std::sort(spans.begin(), spans.end());
+
+    for (const auto &span : spans) {
+        ranges.append(QVariantMap{{QStringLiteral("start"), span.first},
+                                  {QStringLiteral("end"), span.second}});
+    }
+    return ranges;
+}
+
+void Backend::loadDocumentText(const QString &text) {
+    if (!m_document) {
+        setStatus(QStringLiteral("Could not attach the Markdown renderer."));
+        return;
+    }
+
+    m_loading = true;
+    m_document->setPlainText(text);
+    m_loading = false;
+
+    applyDocumentTypography();
+    m_wordCountTimer.stop();
+    setWordCount(countWords(text));
+}
+
 void Backend::setFileUrl(const QUrl &url) {
     if (m_fileUrl == url)
         return;
@@ -292,8 +303,7 @@ void Backend::saveTo(const QUrl &url) {
         return;
     }
 
-    const QString text = currentDocumentText();
-    file.write(text.toUtf8());
+    file.write(currentDocumentText().toUtf8());
 
     // commit() flushes, fsyncs, and atomically renames the temp file into place,
     // returning false (and leaving the original untouched) on any write error.
@@ -305,7 +315,6 @@ void Backend::saveTo(const QUrl &url) {
 
     const bool shouldClose = m_closeAfterSave;
     m_closeAfterSave = false;
-    m_documentText = text;
     setFileUrl(url);
     setModified(false);
     setStatus(QStringLiteral("Saved %1").arg(fileName()));
@@ -322,7 +331,7 @@ QUrl Backend::suggestedSaveUrl() const {
 }
 
 QString Backend::currentDocumentText() const {
-    return m_document ? m_document->toPlainText() : m_documentText;
+    return m_document ? m_document->toPlainText() : QString();
 }
 
 int Backend::countWords(const QString &text) const {
@@ -346,9 +355,6 @@ void Backend::setWordCount(int words) {
 }
 
 void Backend::refreshWordCount() {
-    if (m_wordCountTimer.isActive())
-        m_wordCountTimer.stop();
-
     setWordCount(countWords(currentDocumentText()));
 }
 

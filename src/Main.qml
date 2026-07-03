@@ -50,11 +50,6 @@ ApplicationWindow {
             : Window.FullScreen;
     }
 
-    function syncEditorFromBackend() {
-        if (editor.text !== backend.documentText)
-            editor.text = backend.documentText;
-    }
-
     Shortcut {
         sequence: "Ctrl+S"
         context: Qt.ApplicationShortcut
@@ -80,13 +75,7 @@ ApplicationWindow {
     }
 
     Shortcut {
-        sequence: "Meta+F"
-        context: Qt.ApplicationShortcut
-        onActivated: toggleFullScreen()
-    }
-
-    Shortcut {
-        sequence: "F11"
+        sequences: ["Meta+F", "F11"]
         context: Qt.ApplicationShortcut
         onActivated: toggleFullScreen()
     }
@@ -98,13 +87,7 @@ ApplicationWindow {
     }
 
     Shortcut {
-        sequence: "Ctrl+Shift+Z"
-        context: Qt.WindowShortcut
-        onActivated: editor.redo()
-    }
-
-    Shortcut {
-        sequence: "Ctrl+Y"
+        sequences: ["Ctrl+Shift+Z", "Ctrl+Y"]
         context: Qt.WindowShortcut
         onActivated: editor.redo()
     }
@@ -117,10 +100,6 @@ ApplicationWindow {
 
     Connections {
         target: backend
-
-        function onDocumentTextChanged() {
-            win.syncEditorFromBackend();
-        }
 
         function onCloseAfterSave() {
             win.closeConfirmed = true;
@@ -153,8 +132,6 @@ ApplicationWindow {
             anchors.fill: parent
             anchors.leftMargin: 24
             anchors.rightMargin: 24
-            anchors.topMargin: 0
-            anchors.bottomMargin: 0
             clip: true
             contentWidth: width
             contentHeight: Math.max(height, (previewMode
@@ -208,9 +185,6 @@ ApplicationWindow {
                     color: win.strongTextColor
                 }
                 onCursorRectangleChanged: editorFlick.ensureCursorVisible()
-                property int cachedHiddenLineStart: -1
-                property string cachedHiddenLineText: ""
-                property var cachedHiddenRanges: []
 
                 function replaceSelectionWith(replacement) {
                     var start = Math.min(selectionStart, selectionEnd);
@@ -258,82 +232,9 @@ ApplicationWindow {
                     return true;
                 }
 
-                function lineBounds(position) {
-                    var start = text.lastIndexOf("\n", Math.max(0, position - 1)) + 1;
-                    var end = text.indexOf("\n", position);
-                    if (end === -1)
-                        end = text.length;
-                    return { start: start, end: end };
-                }
-
-                function addRange(ranges, start, end) {
-                    if (end > start)
-                        ranges.push({ start: start, end: end });
-                }
-
-                function hiddenRangesForLine(lineText, lineStart) {
-                    var ranges = [];
-                    if (lineText.search(/[*_\[]/) === -1)
-                        return ranges;
-
-                    var match;
-                    var re = /(\*\*|__)(.+?)(\1)/g;
-                    while ((match = re.exec(lineText)) !== null) {
-                        addRange(ranges, lineStart + match.index,
-                                 lineStart + match.index + match[1].length);
-                        addRange(ranges,
-                                 lineStart + match.index + match[0].length - match[3].length,
-                                 lineStart + match.index + match[0].length);
-                    }
-
-                    re = /(^|[^*])\*([^*\n]+)\*(?!\*)/g;
-                    while ((match = re.exec(lineText)) !== null) {
-                        var starStart = lineStart + match.index + match[1].length;
-                        addRange(ranges, starStart, starStart + 1);
-                        addRange(ranges, starStart + match[0].length - match[1].length - 1,
-                                 starStart + match[0].length - match[1].length);
-                    }
-
-                    re = /(^|[^_])_([^_\n]+)_(?!_)/g;
-                    while ((match = re.exec(lineText)) !== null) {
-                        var underscoreStart = lineStart + match.index + match[1].length;
-                        addRange(ranges, underscoreStart, underscoreStart + 1);
-                        addRange(ranges,
-                                 underscoreStart + match[0].length - match[1].length - 1,
-                                 underscoreStart + match[0].length - match[1].length);
-                    }
-
-                    re = /\[([^\]]+)\]\(((?:\\.|[^)])+)\)/g;
-                    while ((match = re.exec(lineText)) !== null) {
-                        var start = lineStart + match.index;
-                        var textStart = start + 1;
-                        var textEnd = textStart + match[1].length;
-                        var end = start + match[0].length;
-                        addRange(ranges, start, textStart);
-                        addRange(ranges, textEnd, end);
-                    }
-
-                    ranges.sort(function(a, b) { return a.start - b.start; });
-                    return ranges;
-                }
-
-                function hiddenRangesAt(position) {
-                    var bounds = lineBounds(position);
-                    var lineText = text.slice(bounds.start, bounds.end);
-                    if (bounds.start === cachedHiddenLineStart
-                            && lineText === cachedHiddenLineText) {
-                        return cachedHiddenRanges;
-                    }
-
-                    cachedHiddenLineStart = bounds.start;
-                    cachedHiddenLineText = lineText;
-                    cachedHiddenRanges = hiddenRangesForLine(lineText, bounds.start);
-                    return cachedHiddenRanges;
-                }
-
                 function skipHiddenForward(position) {
                     var pos = position;
-                    var ranges = hiddenRangesAt(pos);
+                    var ranges = backend.hiddenRangesAt(pos);
                     for (var i = 0; i < ranges.length; i++) {
                         if (pos >= ranges[i].start && pos < ranges[i].end) {
                             pos = ranges[i].end;
@@ -345,7 +246,7 @@ ApplicationWindow {
 
                 function skipHiddenBackward(position) {
                     var pos = position;
-                    var ranges = hiddenRangesAt(pos);
+                    var ranges = backend.hiddenRangesAt(pos);
                     for (var i = ranges.length - 1; i >= 0; i--) {
                         if (pos > ranges[i].start && pos <= ranges[i].end) {
                             pos = ranges[i].start;
@@ -431,13 +332,7 @@ ApplicationWindow {
                     }
                 }
 
-                onTextChanged: {
-                    cachedHiddenLineStart = -1;
-                    cachedHiddenLineText = "";
-                    cachedHiddenRanges = [];
-
-                    backend.editorTextChanged();
-                }
+                onTextChanged: backend.editorTextChanged()
 
                 Text {
                     anchors.left: parent.left
@@ -451,7 +346,6 @@ ApplicationWindow {
                 }
 
                 Component.onCompleted: {
-                    win.syncEditorFromBackend();
                     backend.attachDocument(textDocument);
                     forceActiveFocus();
                 }

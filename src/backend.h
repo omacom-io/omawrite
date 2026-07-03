@@ -5,14 +5,14 @@
 #include <QString>
 #include <QTimer>
 #include <QUrl>
+#include <QVariantList>
 
-class FilePicker;
 class MarkdownHighlighter;
+class PortalFilePicker;
 class QTextDocument;
 
 class Backend : public QObject {
     Q_OBJECT
-    Q_PROPERTY(QString documentText READ documentText WRITE setDocumentText NOTIFY documentTextChanged)
     Q_PROPERTY(QUrl fileUrl READ fileUrl NOTIFY fileUrlChanged)
     Q_PROPERTY(QString fileName READ fileName NOTIFY fileUrlChanged)
     Q_PROPERTY(bool modified READ modified NOTIFY modifiedChanged)
@@ -21,10 +21,7 @@ class Backend : public QObject {
     Q_PROPERTY(bool darkMode READ darkMode WRITE setDarkMode NOTIFY darkModeChanged)
 
 public:
-    explicit Backend(FilePicker *filePicker, QObject *parent = nullptr);
-
-    QString documentText() const { return m_documentText; }
-    void setDocumentText(const QString &text);
+    explicit Backend(PortalFilePicker *filePicker, QObject *parent = nullptr);
 
     QUrl fileUrl() const { return m_fileUrl; }
     QString fileName() const;
@@ -44,9 +41,9 @@ public:
     Q_INVOKABLE void newWindow();
     Q_INVOKABLE QString clipboardUrl() const;
     Q_INVOKABLE void editorTextChanged();
+    Q_INVOKABLE QVariantList hiddenRangesAt(int position) const;
 
 signals:
-    void documentTextChanged();
     void fileUrlChanged();
     void modifiedChanged();
     void statusChanged();
@@ -55,6 +52,7 @@ signals:
     void closeAfterSave();
 
 private:
+    void loadDocumentText(const QString &text);
     void setFileUrl(const QUrl &url);
     void setModified(bool modified);
     void setStatus(const QString &status);
@@ -68,8 +66,7 @@ private:
     void applyDocumentTypography();
     void reapplyTypographyToChange();
 
-    FilePicker *m_filePicker = nullptr;
-    QString m_documentText;
+    PortalFilePicker *m_filePicker = nullptr;
     QUrl m_fileUrl;
     bool m_modified = false;
     QString m_status;
