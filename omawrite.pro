@@ -1,6 +1,8 @@
 QT += core gui qml quick quickcontrols2 dbus
 
 CONFIG += c++17 release
+CONFIG += link_pkgconfig
+PKGCONFIG += KF6WindowSystem
 TARGET = omawrite
 TEMPLATE = app
 

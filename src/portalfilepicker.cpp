@@ -1,5 +1,6 @@
 #include "portalfilepicker.h"
 
+#include <KWaylandExtras>
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDBusObjectPath>
@@ -7,7 +8,9 @@
 #include <QDBusPendingReply>
 #include <QDir>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QRandomGenerator>
+#include <QWindow>
 
 namespace {
 QString portalToken() {
@@ -33,7 +36,30 @@ QByteArray portalPathBytes(const QString &path) {
 }
 }
 
-PortalFilePicker::PortalFilePicker(QObject *parent) : QObject(parent) {}
+PortalFilePicker::PortalFilePicker(QObject *parent) : QObject(parent) {
+    connect(KWaylandExtras::self(), &KWaylandExtras::windowExported,
+            this, [this](QWindow *window, const QString &handle) {
+        if (window != m_parentWindow)
+            return;
+
+        m_parentExportPending = false;
+        if (handle.isEmpty()) {
+            if (m_pendingAction != Action::None) {
+                clearPending();
+                emit failed(QStringLiteral("Could not associate the file picker with the Omawrite window."));
+            }
+            return;
+        }
+
+        m_parentWindowHandle = QStringLiteral("wayland:%1").arg(handle);
+        if (m_pendingAction != Action::None && m_pendingPath.isEmpty())
+            sendPendingRequest();
+    });
+}
+
+void PortalFilePicker::setParentWindow(QWindow *window) {
+    m_parentWindow = window;
+}
 
 void PortalFilePicker::openDocument() {
     QVariantMap options;
@@ -75,22 +101,40 @@ bool PortalFilePicker::requestFile(const QString &method, const QString &title,
         return false;
     }
 
+    m_pendingMethod = method;
+    m_pendingTitle = title;
+    m_pendingOptions = options;
+    m_pendingAction = action;
+
+    if (QGuiApplication::platformName().startsWith(QStringLiteral("wayland")) &&
+        m_parentWindow && m_parentWindowHandle.isEmpty()) {
+        if (!m_parentExportPending) {
+            m_parentExportPending = true;
+            KWaylandExtras::exportWindow(m_parentWindow);
+        }
+        return true;
+    }
+
+    return sendPendingRequest();
+}
+
+bool PortalFilePicker::sendPendingRequest() {
     QDBusInterface portal(QStringLiteral("org.freedesktop.portal.Desktop"),
                           QStringLiteral("/org/freedesktop/portal/desktop"),
                           QStringLiteral("org.freedesktop.portal.FileChooser"),
                           QDBusConnection::sessionBus());
     if (!portal.isValid()) {
+        clearPending();
         emit failed(QStringLiteral("The XDG desktop portal file chooser is not available."));
         return false;
     }
 
     const QString token = portalToken();
-    options.insert(QStringLiteral("handle_token"), token);
+    m_pendingOptions.insert(QStringLiteral("handle_token"), token);
 
     // Subscribe to the predicted Response path *before* issuing the call so a
     // fast backend cannot emit Response before we are listening.
     m_pendingPath = expectedRequestPath(token);
-    m_pendingAction = action;
     const bool connected = QDBusConnection::sessionBus().connect(
         QStringLiteral("org.freedesktop.portal.Desktop"), m_pendingPath,
         QStringLiteral("org.freedesktop.portal.Request"), QStringLiteral("Response"),
@@ -102,7 +146,8 @@ bool PortalFilePicker::requestFile(const QString &method, const QString &title,
     }
 
     auto *watcher = new QDBusPendingCallWatcher(
-        portal.asyncCall(method, QString(), title, options), this);
+        portal.asyncCall(m_pendingMethod, parentWindowIdentifier(),
+                         m_pendingTitle, m_pendingOptions), this);
 
     connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, watcher]() {
         QDBusPendingReply<QDBusObjectPath> reply = *watcher;
@@ -138,6 +183,20 @@ bool PortalFilePicker::requestFile(const QString &method, const QString &title,
     return true;
 }
 
+QString PortalFilePicker::parentWindowIdentifier() const {
+    if (!m_parentWindow)
+        return {};
+
+    if (!m_parentWindowHandle.isEmpty())
+        return m_parentWindowHandle;
+
+    if (QGuiApplication::platformName() == QStringLiteral("xcb")) {
+        return QStringLiteral("x11:%1").arg(m_parentWindow->winId(), 0, 16);
+    }
+
+    return {};
+}
+
 void PortalFilePicker::handleResponse(uint response, const QVariantMap &results) {
     const Action action = m_pendingAction;
     clearPending();
@@ -169,5 +228,8 @@ void PortalFilePicker::clearPending() {
     }
 
     m_pendingPath.clear();
+    m_pendingMethod.clear();
+    m_pendingTitle.clear();
+    m_pendingOptions.clear();
     m_pendingAction = Action::None;
 }
