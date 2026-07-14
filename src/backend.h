@@ -40,6 +40,7 @@ public:
     Q_INVOKABLE void saveAsDialog();
     Q_INVOKABLE void newWindow();
     Q_INVOKABLE QString clipboardUrl() const;
+    Q_INVOKABLE QString clipboardText() const;
     Q_INVOKABLE bool editorTextChanged();
     Q_INVOKABLE QVariantList hiddenRangesAt(int position) const;
     Q_INVOKABLE void setSearchHighlight(const QString &query, int currentMatchStart);

@@ -206,6 +206,15 @@ QString Backend::clipboardUrl() const {
     return normalizedLinkUrl(mimeData->text());
 }
 
+QString Backend::clipboardText() const {
+    const QClipboard *clipboard = QGuiApplication::clipboard();
+    if (!clipboard)
+        return {};
+
+    const QMimeData *mimeData = clipboard->mimeData();
+    return mimeData && mimeData->hasText() ? mimeData->text() : QString();
+}
+
 bool Backend::editorTextChanged() {
     if (m_loading || m_formattingTypography)
         return false;

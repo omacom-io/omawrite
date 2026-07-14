@@ -300,6 +300,12 @@ ApplicationWindow {
                     return true;
                 }
 
+                function pasteClipboardAsPlainText() {
+                    var pastedText = backend.clipboardText();
+                    if (pastedText.length > 0)
+                        replaceSelectionWith(pastedText);
+                }
+
                 function skipHiddenForward(position) {
                     var pos = position;
                     var ranges = backend.hiddenRangesAt(pos);
@@ -371,7 +377,9 @@ ApplicationWindow {
                     var shiftInsert = (event.key === Qt.Key_Insert)
                         && (event.modifiers & Qt.ShiftModifier)
                         && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier));
-                    if ((pasteKey || shiftInsert) && pasteClipboardUrlAsMarkdownLink()) {
+                    if (pasteKey || shiftInsert) {
+                        if (!pasteClipboardUrlAsMarkdownLink())
+                            pasteClipboardAsPlainText();
                         event.accepted = true;
                         return;
                     }
