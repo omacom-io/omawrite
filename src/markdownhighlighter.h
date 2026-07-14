@@ -11,6 +11,7 @@ public:
     explicit MarkdownHighlighter(QTextDocument *document);
 
     void setDarkMode(bool darkMode);
+    void setSearch(const QString &query, int currentMatchStart);
 
     struct Span {
         int start;
@@ -37,6 +38,7 @@ private:
     void rebuildFormats();
     void highlightMarkers(const QString &text);
     void highlightInline(const QString &text);
+    void highlightSearch(const QString &text);
 
     bool m_darkMode = true;
     QTextCharFormat m_markerFormat;
@@ -47,4 +49,8 @@ private:
     QTextCharFormat m_codeFormat;
     QTextCharFormat m_quoteFormat;
     QTextCharFormat m_linkFormat;
+    QString m_searchQuery;
+    int m_currentMatchStart = -1;
+    QTextCharFormat m_searchFormat;
+    QTextCharFormat m_currentSearchFormat;
 };

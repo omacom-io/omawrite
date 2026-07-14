@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
+import QtQuick.Layouts
 import QtQuick.Window
 
 ApplicationWindow {
@@ -24,6 +25,10 @@ ApplicationWindow {
         Math.max(360, width - Math.round(writerFontMetrics.averageCharacterWidth * 20)))
     property bool previewMode: false
     property bool closeConfirmed: false
+    property bool searchOpen: false
+    property bool searchUpdating: false
+    property var searchMatches: []
+    property int searchMatchIndex: -1
 
     Material.theme: darkMode ? Material.Dark : Material.Light
     Material.accent: darkMode ? "#5584aa" : "#2077b2"
@@ -48,6 +53,51 @@ ApplicationWindow {
         win.visibility = win.visibility === Window.FullScreen
             ? Window.Windowed
             : Window.FullScreen;
+    }
+
+    function updateSearch() {
+        var matches = [];
+        var query = searchField.text;
+        if (query.length > 0) {
+            var haystack = editor.text.toLocaleLowerCase();
+            var needle = query.toLocaleLowerCase();
+            var position = 0;
+            while ((position = haystack.indexOf(needle, position)) !== -1) {
+                matches.push(position);
+                position += Math.max(1, needle.length);
+            }
+        }
+        searchMatches = matches;
+        searchMatchIndex = matches.length > 0 ? 0 : -1;
+        showSearchMatch();
+    }
+
+    function showSearchMatch() {
+        var start = searchMatchIndex >= 0 ? searchMatches[searchMatchIndex] : -1;
+        searchUpdating = true;
+        backend.setSearchHighlight(searchField.text, start);
+        if (start >= 0) {
+            editor.select(start, start + searchField.text.length);
+            editorFlick.ensureCursorVisible();
+        }
+        searchUpdating = false;
+    }
+
+    function moveSearch(direction) {
+        if (searchMatches.length === 0)
+            return;
+        searchMatchIndex = (searchMatchIndex + direction + searchMatches.length)
+                           % searchMatches.length;
+        showSearchMatch();
+    }
+
+    function closeSearch() {
+        searchOpen = false;
+        searchUpdating = true;
+        backend.setSearchHighlight("", -1);
+        editor.deselect();
+        searchUpdating = false;
+        editor.forceActiveFocus();
     }
 
     Shortcut {
@@ -96,6 +146,24 @@ ApplicationWindow {
         sequence: "Ctrl+E"
         context: Qt.ApplicationShortcut
         onActivated: previewMode = !previewMode
+    }
+
+    Shortcut {
+        sequence: "Ctrl+F"
+        context: Qt.ApplicationShortcut
+        onActivated: {
+            previewMode = false;
+            searchOpen = true;
+            searchField.forceActiveFocus();
+            searchField.selectAll();
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+G"
+        context: Qt.ApplicationShortcut
+        enabled: win.searchOpen
+        onActivated: win.moveSearch(1)
     }
 
     Connections {
@@ -332,7 +400,13 @@ ApplicationWindow {
                     }
                 }
 
-                onTextChanged: backend.editorTextChanged()
+                onTextChanged: {
+                    if (win.searchUpdating)
+                        return;
+                    var contentChanged = backend.editorTextChanged();
+                    if (win.searchOpen && contentChanged)
+                        win.updateSearch();
+                }
 
                 Text {
                     anchors.left: parent.left
@@ -415,6 +489,104 @@ ApplicationWindow {
             opacity: 0.75
             font.family: "iA Writer Mono S"
             font.pixelSize: 11
+        }
+
+
+        Pane {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.topMargin: 12
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            height: 56
+            visible: win.searchOpen
+            z: 10
+            leftPadding: 16
+            rightPadding: 8
+            topPadding: 0
+            bottomPadding: 0
+            Material.elevation: 8
+
+            background: Rectangle {
+                radius: 9
+                color: win.darkMode ? "#22221f" : "#fffef2"
+            }
+
+            RowLayout {
+                anchors.fill: parent
+                spacing: 8
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+
+                    TextInput {
+                        id: searchField
+                        anchors.fill: parent
+                        verticalAlignment: TextInput.AlignVCenter
+                        selectByMouse: true
+                        color: win.textColor
+                        selectionColor: win.selectionFill
+                        selectedTextColor: win.strongTextColor
+                        font.pixelSize: 17
+                        clip: true
+                        onTextChanged: win.updateSearch()
+                        Keys.onReturnPressed: function(event) {
+                            win.moveSearch((event.modifiers & Qt.ShiftModifier) ? -1 : 1);
+                            event.accepted = true;
+                        }
+                        Keys.onEscapePressed: function(event) {
+                            win.closeSearch();
+                            event.accepted = true;
+                        }
+                    }
+
+                    Label {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Find"
+                        visible: searchField.text.length === 0
+                        color: win.mutedColor
+                        font.pixelSize: 17
+                    }
+                }
+
+                Label {
+                    Layout.preferredWidth: 58
+                    Layout.fillHeight: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    text: win.searchMatches.length === 0
+                        ? "0/0"
+                        : (win.searchMatchIndex + 1) + "/" + win.searchMatches.length
+                    color: win.darkMode ? win.textColor : "#62635f"
+                    font.pixelSize: 16
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 1
+                    Layout.preferredHeight: 34
+                    color: win.darkMode ? "#6f6f62" : "#d5d56e"
+                }
+
+                SearchIconButton {
+                    iconName: "up"
+                    iconColor: win.darkMode ? win.textColor : "#62635f"
+                    onClicked: win.moveSearch(-1)
+                }
+
+                SearchIconButton {
+                    iconName: "down"
+                    iconColor: win.darkMode ? win.textColor : "#62635f"
+                    onClicked: win.moveSearch(1)
+                }
+
+                SearchIconButton {
+                    iconName: "close"
+                    iconColor: win.darkMode ? win.textColor : "#62635f"
+                    onClicked: win.closeSearch()
+                }
+            }
         }
     }
 

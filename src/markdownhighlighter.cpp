@@ -18,6 +18,14 @@ void MarkdownHighlighter::setDarkMode(bool darkMode) {
     rehighlight();
 }
 
+void MarkdownHighlighter::setSearch(const QString &query, int currentMatchStart) {
+    if (m_searchQuery == query && m_currentMatchStart == currentMatchStart)
+        return;
+    m_searchQuery = query;
+    m_currentMatchStart = currentMatchStart;
+    rehighlight();
+}
+
 void MarkdownHighlighter::rebuildFormats() {
     const QColor marker = m_darkMode ? QColor(QStringLiteral("#4f525a"))
                                      : QColor(QStringLiteral("#aeb1b5"));
@@ -62,16 +70,39 @@ void MarkdownHighlighter::rebuildFormats() {
     m_linkFormat = QTextCharFormat();
     m_linkFormat.setForeground(link);
     m_linkFormat.setFontUnderline(true);
+
+    m_searchFormat = QTextCharFormat();
+    m_searchFormat.setBackground(m_darkMode ? QColor(QStringLiteral("#725b18"))
+                                            : QColor(QStringLiteral("#ffe58a")));
+    m_currentSearchFormat = QTextCharFormat();
+    m_currentSearchFormat.setBackground(m_darkMode ? QColor(QStringLiteral("#b36b20"))
+                                                   : QColor(QStringLiteral("#ffad42")));
 }
 
 void MarkdownHighlighter::highlightBlock(const QString &text) {
-    if (text.isEmpty())
+    if (!text.isEmpty()) {
+        highlightMarkers(text);
+        if (text.contains(QLatin1Char('`')) || text.contains(QLatin1Char('*'))
+            || text.contains(QLatin1Char('_')) || text.contains(QLatin1Char('['))) {
+            highlightInline(text);
+        }
+    }
+    highlightSearch(text);
+}
+
+void MarkdownHighlighter::highlightSearch(const QString &text) {
+    if (m_searchQuery.isEmpty())
         return;
 
-    highlightMarkers(text);
-    if (text.contains(QLatin1Char('`')) || text.contains(QLatin1Char('*'))
-            || text.contains(QLatin1Char('_')) || text.contains(QLatin1Char('['))) {
-        highlightInline(text);
+    int from = 0;
+    while ((from = text.indexOf(m_searchQuery, from, Qt::CaseInsensitive)) >= 0) {
+        const int documentStart = currentBlock().position() + from;
+        QTextCharFormat format = this->format(from);
+        format.setBackground(documentStart == m_currentMatchStart
+                                 ? m_currentSearchFormat.background()
+                                 : m_searchFormat.background());
+        setFormat(from, m_searchQuery.length(), format);
+        from += qMax(1, m_searchQuery.length());
     }
 }
 

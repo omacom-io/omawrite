@@ -114,6 +114,7 @@ void Backend::attachDocument(QObject *textDocument) {
         delete m_highlighter.data();
 
     m_document = quickDocument->textDocument();
+    m_lastDocumentText = m_document->toPlainText();
     m_highlighter = new MarkdownHighlighter(m_document);
     m_highlighter->setDarkMode(m_darkMode);
 
@@ -205,9 +206,14 @@ QString Backend::clipboardUrl() const {
     return normalizedLinkUrl(mimeData->text());
 }
 
-void Backend::editorTextChanged() {
+bool Backend::editorTextChanged() {
     if (m_loading || m_formattingTypography)
-        return;
+        return false;
+
+    const QString text = currentDocumentText();
+    if (text == m_lastDocumentText)
+        return false;
+    m_lastDocumentText = text;
 
     if (m_document) {
         const int blockCount = m_document->blockCount();
@@ -218,6 +224,7 @@ void Backend::editorTextChanged() {
 
     scheduleWordCount();
     setModified(true);
+    return true;
 }
 
 QVariantList Backend::hiddenRangesAt(int position) const {
@@ -249,6 +256,11 @@ QVariantList Backend::hiddenRangesAt(int position) const {
     return ranges;
 }
 
+void Backend::setSearchHighlight(const QString &query, int currentMatchStart) {
+    if (m_highlighter)
+        m_highlighter->setSearch(query, currentMatchStart);
+}
+
 void Backend::loadDocumentText(const QString &text) {
     if (!m_document) {
         setStatus(QStringLiteral("Could not attach the Markdown renderer."));
@@ -257,6 +269,7 @@ void Backend::loadDocumentText(const QString &text) {
 
     m_loading = true;
     m_document->setPlainText(text);
+    m_lastDocumentText = text;
     m_loading = false;
 
     applyDocumentTypography();
