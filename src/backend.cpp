@@ -369,7 +369,16 @@ QUrl Backend::suggestedSaveUrl() const {
     if (m_fileUrl.isLocalFile())
         return m_fileUrl;
 
-    return QUrl::fromLocalFile(QDir::home().filePath(QStringLiteral("Untitled.md")));
+    QString name = currentDocumentText().section(QLatin1Char('\n'), 0, 0).trimmed();
+    name.replace(QRegularExpression(QStringLiteral("[/\\x00-\\x1f\\x7f]")),
+                 QStringLiteral("-"));
+    name = name.left(120).trimmed();
+    if (name.isEmpty() || name == QStringLiteral(".") || name == QStringLiteral(".."))
+        name = QStringLiteral("Untitled");
+    if (!name.endsWith(QStringLiteral(".md"), Qt::CaseInsensitive))
+        name += QStringLiteral(".md");
+
+    return QUrl::fromLocalFile(QDir::home().filePath(name));
 }
 
 QString Backend::currentDocumentText() const {
