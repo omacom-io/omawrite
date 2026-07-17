@@ -8,7 +8,6 @@
 #include <QVariantList>
 
 class MarkdownHighlighter;
-class PortalFilePicker;
 class QTextDocument;
 
 class Backend : public QObject {
@@ -21,7 +20,7 @@ class Backend : public QObject {
     Q_PROPERTY(bool darkMode READ darkMode WRITE setDarkMode NOTIFY darkModeChanged)
 
 public:
-    explicit Backend(PortalFilePicker *filePicker, QObject *parent = nullptr);
+    explicit Backend(QObject *parent = nullptr);
 
     QUrl fileUrl() const { return m_fileUrl; }
     QString fileName() const;
@@ -38,6 +37,8 @@ public:
     Q_INVOKABLE void save();
     Q_INVOKABLE void saveForClose();
     Q_INVOKABLE void saveAsDialog();
+    Q_INVOKABLE void saveAs(const QUrl &url);
+    Q_INVOKABLE void fileDialogCanceled();
     Q_INVOKABLE void newWindow();
     Q_INVOKABLE QString clipboardUrl() const;
     Q_INVOKABLE QString clipboardText() const;
@@ -52,6 +53,8 @@ signals:
     void wordCountChanged();
     void darkModeChanged();
     void closeAfterSave();
+    void openDialogRequested();
+    void saveDialogRequested(const QUrl &suggestedUrl);
 
 private:
     void loadDocumentText(const QString &text);
@@ -68,7 +71,6 @@ private:
     void applyDocumentTypography();
     void reapplyTypographyToChange();
 
-    PortalFilePicker *m_filePicker = nullptr;
     QUrl m_fileUrl;
     bool m_modified = false;
     QString m_status;

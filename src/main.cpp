@@ -5,10 +5,8 @@
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QUrl>
-#include <QWindow>
 
 #include "backend.h"
-#include "portalfilepicker.h"
 #include "systemtheme.h"
 
 int main(int argc, char *argv[]) {
@@ -21,8 +19,7 @@ int main(int argc, char *argv[]) {
 
     QQuickStyle::setStyle(QStringLiteral("Material"));
 
-    PortalFilePicker filePicker;
-    Backend backend(&filePicker, &app);
+    Backend backend(&app);
     SystemTheme systemTheme(&app);
     backend.setDarkMode(systemTheme.darkMode());
     QObject::connect(&systemTheme, &SystemTheme::darkModeChanged, &backend,
@@ -34,8 +31,6 @@ int main(int argc, char *argv[]) {
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty())
         return -1;
-
-    filePicker.setParentWindow(qobject_cast<QWindow *>(engine.rootObjects().constFirst()));
 
     const QStringList args = app.arguments();
     if (args.size() > 1)

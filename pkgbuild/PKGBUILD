@@ -8,8 +8,8 @@ arch=('x86_64')
 url='https://github.com/omacom-io/omawrite'
 license=('MIT')
 install='omawrite.install'
-depends=('kwindowsystem' 'qt6-base' 'qt6-declarative' 'ttf-ia-writer' 'xdg-desktop-portal')
-makedepends=('gcc' 'make' 'pkgconf' 'qt6-base' 'qt6-declarative')
+depends=('qt6-base' 'qt6-declarative' 'ttf-ia-writer' 'xdg-desktop-portal')
+makedepends=('gcc' 'make' 'qt6-base' 'qt6-declarative')
 source=()
 sha256sums=()
 

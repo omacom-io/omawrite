@@ -24,6 +24,5 @@ Install via the Omarchy Package Repository via the `omawrite` package. It's inst
 ## Requirements
 
 - Qt 6: `qt6-base`, `qt6-declarative`, `qt6-quickcontrols2`
-- KDE Window System: `kwindowsystem`
 - `xdg-desktop-portal` and a portal backend
 - `ttf-ia-writer` for the iA Writer Mono S font

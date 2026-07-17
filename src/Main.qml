@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
+import QtQuick.Dialogs as Dialogs
 import QtQuick.Layouts
 import QtQuick.Window
 
@@ -169,10 +170,36 @@ ApplicationWindow {
     Connections {
         target: backend
 
+        function onOpenDialogRequested() {
+            openFileDialog.open();
+        }
+
+        function onSaveDialogRequested(suggestedUrl) {
+            saveFileDialog.selectedFile = suggestedUrl;
+            saveFileDialog.open();
+        }
+
         function onCloseAfterSave() {
             win.closeConfirmed = true;
             win.close();
         }
+    }
+
+    Dialogs.FileDialog {
+        id: openFileDialog
+        title: "Open File"
+        fileMode: Dialogs.FileDialog.OpenFile
+        nameFilters: ["Markdown files (*.md *.markdown)", "All files (*)"]
+        onAccepted: backend.open(selectedFile)
+    }
+
+    Dialogs.FileDialog {
+        id: saveFileDialog
+        title: "Save File"
+        fileMode: Dialogs.FileDialog.SaveFile
+        nameFilters: ["Markdown files (*.md *.markdown)", "All files (*)"]
+        onAccepted: backend.saveAs(selectedFile)
+        onRejected: backend.fileDialogCanceled()
     }
 
     UnsavedChangesDialog {

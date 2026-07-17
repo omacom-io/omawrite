@@ -21,7 +21,6 @@
 #include <algorithm>
 
 #include "markdownhighlighter.h"
-#include "portalfilepicker.h"
 
 namespace {
 constexpr qreal typoraLineHeightPercent = 140;
@@ -62,21 +61,10 @@ QString normalizedLinkUrl(const QString &clipboardText) {
 }
 }
 
-Backend::Backend(PortalFilePicker *filePicker, QObject *parent)
-    : QObject(parent), m_filePicker(filePicker) {
+Backend::Backend(QObject *parent) : QObject(parent) {
     m_wordCountTimer.setSingleShot(true);
     m_wordCountTimer.setInterval(120);
     connect(&m_wordCountTimer, &QTimer::timeout, this, &Backend::refreshWordCount);
-
-    connect(m_filePicker, &PortalFilePicker::openSelected, this, &Backend::open);
-    connect(m_filePicker, &PortalFilePicker::saveSelected, this, &Backend::saveTo);
-    connect(m_filePicker, &PortalFilePicker::canceled, this, [this]() {
-        m_closeAfterSave = false;
-    });
-    connect(m_filePicker, &PortalFilePicker::failed, this, [this](const QString &message) {
-        m_closeAfterSave = false;
-        setStatus(message);
-    });
 }
 
 QString Backend::fileName() const {
@@ -130,7 +118,7 @@ void Backend::attachDocument(QObject *textDocument) {
 }
 
 void Backend::openDialog() {
-    m_filePicker->openDocument();
+    emit openDialogRequested();
 }
 
 void Backend::open(const QUrl &url) {
@@ -172,7 +160,15 @@ void Backend::saveForClose() {
 }
 
 void Backend::saveAsDialog() {
-    m_filePicker->saveDocument(suggestedSaveUrl());
+    emit saveDialogRequested(suggestedSaveUrl());
+}
+
+void Backend::saveAs(const QUrl &url) {
+    saveTo(url);
+}
+
+void Backend::fileDialogCanceled() {
+    m_closeAfterSave = false;
 }
 
 void Backend::newWindow() {
