@@ -9,6 +9,7 @@
 
 class MarkdownHighlighter;
 class QTextDocument;
+class QWindow;
 
 class Backend : public QObject {
     Q_OBJECT
@@ -21,6 +22,8 @@ class Backend : public QObject {
 
 public:
     explicit Backend(QObject *parent = nullptr);
+
+    void setParentWindow(QWindow *window);
 
     QUrl fileUrl() const { return m_fileUrl; }
     QString fileName() const;
@@ -39,6 +42,7 @@ public:
     Q_INVOKABLE void saveAsDialog();
     Q_INVOKABLE void saveAs(const QUrl &url);
     Q_INVOKABLE void fileDialogCanceled();
+    Q_INVOKABLE void printDocument();
     Q_INVOKABLE void newWindow();
     Q_INVOKABLE QString clipboardUrl() const;
     Q_INVOKABLE QString clipboardText() const;
@@ -84,6 +88,7 @@ private:
     int m_lastChangeAdded = 0;
     QTimer m_wordCountTimer;
     QPointer<QTextDocument> m_document;
+    QPointer<QWindow> m_parentWindow;
     QPointer<MarkdownHighlighter> m_highlighter;
     QString m_lastDocumentText;
 };

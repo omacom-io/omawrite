@@ -1,16 +1,17 @@
 #include <QFont>
-#include <QGuiApplication>
+#include <QApplication>
 #include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QUrl>
+#include <QWindow>
 
 #include "backend.h"
 #include "systemtheme.h"
 
 int main(int argc, char *argv[]) {
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omawrite"));
     app.setDesktopFileName(QStringLiteral("omawrite"));
     app.setWindowIcon(QIcon::fromTheme(QStringLiteral("omawrite")));
@@ -31,6 +32,8 @@ int main(int argc, char *argv[]) {
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty())
         return -1;
+
+    backend.setParentWindow(qobject_cast<QWindow *>(engine.rootObjects().constFirst()));
 
     const QStringList args = app.arguments();
     if (args.size() > 1)

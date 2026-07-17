@@ -8,6 +8,8 @@
 #include <QGuiApplication>
 #include <QMimeData>
 #include <QProcess>
+#include <QPrintDialog>
+#include <QPrinter>
 #include <QQuickTextDocument>
 #include <QRegularExpression>
 #include <QSaveFile>
@@ -17,6 +19,7 @@
 #include <QTextDocument>
 #include <QUrl>
 #include <QVariantMap>
+#include <QWindow>
 
 #include <algorithm>
 
@@ -65,6 +68,10 @@ Backend::Backend(QObject *parent) : QObject(parent) {
     m_wordCountTimer.setSingleShot(true);
     m_wordCountTimer.setInterval(120);
     connect(&m_wordCountTimer, &QTimer::timeout, this, &Backend::refreshWordCount);
+}
+
+void Backend::setParentWindow(QWindow *window) {
+    m_parentWindow = window;
 }
 
 QString Backend::fileName() const {
@@ -169,6 +176,23 @@ void Backend::saveAs(const QUrl &url) {
 
 void Backend::fileDialogCanceled() {
     m_closeAfterSave = false;
+}
+
+void Backend::printDocument() {
+    if (!m_document) {
+        setStatus(QStringLiteral("There is no document to print."));
+        return;
+    }
+
+    QPrinter printer(QPrinter::HighResolution);
+    QPrintDialog dialog(&printer);
+    dialog.setWindowTitle(QStringLiteral("Print %1").arg(fileName()));
+    dialog.winId();
+    if (dialog.windowHandle() && m_parentWindow)
+        dialog.windowHandle()->setTransientParent(m_parentWindow);
+
+    if (dialog.exec() == QDialog::Accepted)
+        m_document->print(&printer);
 }
 
 void Backend::newWindow() {

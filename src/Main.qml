@@ -126,6 +126,12 @@ ApplicationWindow {
     }
 
     Shortcut {
+        sequence: "Ctrl+P"
+        context: Qt.ApplicationShortcut
+        onActivated: backend.printDocument()
+    }
+
+    Shortcut {
         sequences: ["Meta+F", "F11"]
         context: Qt.ApplicationShortcut
         onActivated: toggleFullScreen()
