@@ -2,14 +2,17 @@
 
 #include <QObject>
 #include <QPointer>
+#include <QFileSystemWatcher>
 #include <QString>
 #include <QTimer>
 #include <QUrl>
 #include <QVariantList>
+#include <memory>
 
 class MarkdownHighlighter;
 class QTextDocument;
 class QWindow;
+class QLockFile;
 
 class Backend : public QObject {
     Q_OBJECT
@@ -22,6 +25,7 @@ class Backend : public QObject {
 
 public:
     explicit Backend(QObject *parent = nullptr);
+    ~Backend() override;
 
     void setParentWindow(QWindow *window);
 
@@ -33,6 +37,9 @@ public:
     int wordCount() const { return m_wordCount; }
     bool darkMode() const { return m_darkMode; }
     void setDarkMode(bool darkMode);
+    static int countWords(const QString &text);
+    static QString normalizedLinkUrl(const QString &clipboardText);
+    static QString suggestedFileName(const QString &text);
 
     Q_INVOKABLE void attachDocument(QObject *textDocument);
     Q_INVOKABLE void openDialog();
@@ -42,6 +49,9 @@ public:
     Q_INVOKABLE void saveAsDialog();
     Q_INVOKABLE void saveAs(const QUrl &url);
     Q_INVOKABLE void fileDialogCanceled();
+    Q_INVOKABLE void discardRecovery();
+    Q_INVOKABLE void reloadFromDisk();
+    Q_INVOKABLE void keepExternalVersion();
     Q_INVOKABLE void printDocument();
     Q_INVOKABLE void newWindow();
     Q_INVOKABLE QString clipboardUrl() const;
@@ -49,6 +59,9 @@ public:
     Q_INVOKABLE bool editorTextChanged();
     Q_INVOKABLE QVariantList hiddenRangesAt(int position) const;
     Q_INVOKABLE void setSearchHighlight(const QString &query, int currentMatchStart);
+    Q_INVOKABLE void openExternalUrl(const QUrl &url);
+    Q_INVOKABLE QVariantMap windowGeometry() const;
+    Q_INVOKABLE void saveWindowGeometry(int x, int y, int width, int height, bool maximized);
 
 signals:
     void fileUrlChanged();
@@ -59,6 +72,8 @@ signals:
     void closeAfterSave();
     void openDialogRequested();
     void saveDialogRequested(const QUrl &suggestedUrl);
+    void saveSucceeded();
+    void externalChangeDetected(bool deleted, bool locallyModified);
 
 private:
     void loadDocumentText(const QString &text);
@@ -68,12 +83,17 @@ private:
     void saveTo(const QUrl &url);
     QUrl suggestedSaveUrl() const;
     QString currentDocumentText() const;
-    int countWords(const QString &text) const;
     void setWordCount(int words);
     void refreshWordCount();
     void scheduleWordCount();
     void applyDocumentTypography();
     void reapplyTypographyToChange();
+    void scheduleRecovery();
+    void writeRecovery();
+    void restoreRecovery();
+    void clearRecovery();
+    QString recoveryPath() const;
+    void watchCurrentFile();
 
     QUrl m_fileUrl;
     bool m_modified = false;
@@ -87,8 +107,12 @@ private:
     int m_lastChangePos = 0;
     int m_lastChangeAdded = 0;
     QTimer m_wordCountTimer;
+    QTimer m_recoveryTimer;
+    QFileSystemWatcher m_fileWatcher;
     QPointer<QTextDocument> m_document;
     QPointer<QWindow> m_parentWindow;
     QPointer<MarkdownHighlighter> m_highlighter;
     QString m_lastDocumentText;
+    QString m_recoveryPath;
+    std::unique_ptr<QLockFile> m_recoveryLock;
 };

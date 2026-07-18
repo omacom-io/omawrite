@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QDesktopServices>
 #include <QGuiApplication>
 #include <QMimeData>
 #include <QProcess>
@@ -12,6 +13,11 @@
 #include <QPrinter>
 #include <QQuickTextDocument>
 #include <QRegularExpression>
+#include <QSettings>
+#include <QStandardPaths>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QLockFile>
 #include <QSaveFile>
 #include <QTextBlock>
 #include <QTextBlockFormat>
@@ -25,10 +31,9 @@
 
 #include "markdownhighlighter.h"
 
-namespace {
 constexpr qreal typoraLineHeightPercent = 140;
 
-QString normalizedLinkUrl(const QString &clipboardText) {
+QString Backend::normalizedLinkUrl(const QString &clipboardText) {
     QString candidate = clipboardText.trimmed();
     static const QRegularExpression lineBreakRe(QStringLiteral("[\\r\\n]"));
     const int lineBreak = candidate.indexOf(lineBreakRe);
@@ -62,13 +67,42 @@ QString normalizedLinkUrl(const QString &clipboardText) {
 
     return url.toString();
 }
-}
 
 Backend::Backend(QObject *parent) : QObject(parent) {
+    const QString stateDirectory = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(stateDirectory);
+    // Claim an orphaned snapshot before taking an empty slot. This ensures a
+    // crash in window 2 is still recovered even if window 1 exited normally.
+    for (int pass = 0; pass < 2 && !m_recoveryLock; ++pass) {
+        for (int slot = 0; slot < 100; ++slot) {
+            const QString base = QDir(stateDirectory).filePath(
+                QStringLiteral("recovery-%1").arg(slot));
+            const bool snapshotExists = QFileInfo::exists(base + QStringLiteral(".json"));
+            if ((pass == 0) != snapshotExists)
+                continue;
+            auto lock = std::make_unique<QLockFile>(base + QStringLiteral(".lock"));
+            if (lock->tryLock()) {
+                m_recoveryPath = base + QStringLiteral(".json");
+                m_recoveryLock = std::move(lock);
+                break;
+            }
+        }
+    }
     m_wordCountTimer.setSingleShot(true);
     m_wordCountTimer.setInterval(120);
     connect(&m_wordCountTimer, &QTimer::timeout, this, &Backend::refreshWordCount);
+    m_recoveryTimer.setSingleShot(true);
+    m_recoveryTimer.setInterval(750);
+    connect(&m_recoveryTimer, &QTimer::timeout, this, &Backend::writeRecovery);
+    connect(&m_fileWatcher, &QFileSystemWatcher::fileChanged, this,
+            [this](const QString &path) {
+                if (path != m_fileUrl.toLocalFile())
+                    return;
+                emit externalChangeDetected(!QFileInfo::exists(path), m_modified);
+            });
 }
+
+Backend::~Backend() = default;
 
 void Backend::setParentWindow(QWindow *window) {
     m_parentWindow = window;
@@ -122,6 +156,7 @@ void Backend::attachDocument(QObject *textDocument) {
             });
 
     applyDocumentTypography();
+    restoreRecovery();
 }
 
 void Backend::openDialog() {
@@ -142,7 +177,9 @@ void Backend::open(const QUrl &url) {
     }
 
     loadDocumentText(QString::fromUtf8(file.readAll()));
+    clearRecovery();
     setFileUrl(url);
+    watchCurrentFile();
     setModified(false);
     setStatus(QStringLiteral("Opened %1").arg(fileName()));
 }
@@ -178,6 +215,22 @@ void Backend::fileDialogCanceled() {
     m_closeAfterSave = false;
 }
 
+void Backend::discardRecovery() {
+    clearRecovery();
+}
+
+void Backend::reloadFromDisk() {
+    if (m_fileUrl.isLocalFile())
+        open(m_fileUrl);
+}
+
+void Backend::keepExternalVersion() {
+    setModified(true);
+    scheduleRecovery();
+    watchCurrentFile();
+    setStatus(QStringLiteral("Kept your version"));
+}
+
 void Backend::printDocument() {
     if (!m_document) {
         setStatus(QStringLiteral("There is no document to print."));
@@ -191,8 +244,12 @@ void Backend::printDocument() {
     if (dialog.windowHandle() && m_parentWindow)
         dialog.windowHandle()->setTransientParent(m_parentWindow);
 
-    if (dialog.exec() == QDialog::Accepted)
-        m_document->print(&printer);
+    if (dialog.exec() == QDialog::Accepted) {
+        QTextDocument rendered;
+        rendered.setDefaultFont(m_document->defaultFont());
+        rendered.setMarkdown(currentDocumentText());
+        rendered.print(&printer);
+    }
 }
 
 void Backend::newWindow() {
@@ -253,6 +310,8 @@ bool Backend::editorTextChanged() {
 
     scheduleWordCount();
     setModified(true);
+    setStatus(QStringLiteral("Unsaved"));
+    scheduleRecovery();
     return true;
 }
 
@@ -290,6 +349,33 @@ void Backend::setSearchHighlight(const QString &query, int currentMatchStart) {
         m_highlighter->setSearch(query, currentMatchStart);
 }
 
+void Backend::openExternalUrl(const QUrl &url) {
+    const QString scheme = url.scheme().toLower();
+    if (scheme == QStringLiteral("http") || scheme == QStringLiteral("https")
+            || scheme == QStringLiteral("mailto"))
+        QDesktopServices::openUrl(url);
+}
+
+QVariantMap Backend::windowGeometry() const {
+    QSettings settings;
+    return {{QStringLiteral("x"), settings.value(QStringLiteral("window/x"), -1)},
+            {QStringLiteral("y"), settings.value(QStringLiteral("window/y"), -1)},
+            {QStringLiteral("width"), settings.value(QStringLiteral("window/width"), 1280)},
+            {QStringLiteral("height"), settings.value(QStringLiteral("window/height"), 820)},
+            {QStringLiteral("maximized"), settings.value(QStringLiteral("window/maximized"), false)}};
+}
+
+void Backend::saveWindowGeometry(int x, int y, int width, int height, bool maximized) {
+    QSettings settings;
+    if (!maximized) {
+        settings.setValue(QStringLiteral("window/x"), x);
+        settings.setValue(QStringLiteral("window/y"), y);
+        settings.setValue(QStringLiteral("window/width"), width);
+        settings.setValue(QStringLiteral("window/height"), height);
+    }
+    settings.setValue(QStringLiteral("window/maximized"), maximized);
+}
+
 void Backend::loadDocumentText(const QString &text) {
     if (!m_document) {
         setStatus(QStringLiteral("Could not attach the Markdown renderer."));
@@ -312,6 +398,7 @@ void Backend::setFileUrl(const QUrl &url) {
 
     m_fileUrl = url;
     emit fileUrlChanged();
+    watchCurrentFile();
 }
 
 void Backend::setModified(bool modified) {
@@ -360,32 +447,77 @@ void Backend::saveTo(const QUrl &url) {
     setFileUrl(url);
     setModified(false);
     setStatus(QStringLiteral("Saved %1").arg(fileName()));
+    clearRecovery();
+    emit saveSucceeded();
 
     if (shouldClose)
         emit closeAfterSave();
+}
+
+void Backend::scheduleRecovery() {
+    m_recoveryTimer.start();
+}
+
+QString Backend::recoveryPath() const {
+    return m_recoveryPath;
+}
+
+void Backend::writeRecovery() {
+    if (!m_modified)
+        return;
+    const QString path = recoveryPath();
+    if (path.isEmpty())
+        return;
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly))
+        return;
+    const QJsonObject recovery{{QStringLiteral("fileUrl"), m_fileUrl.toString()},
+                               {QStringLiteral("text"), currentDocumentText()}};
+    file.write(QJsonDocument(recovery).toJson(QJsonDocument::Compact));
+    file.commit();
+}
+
+void Backend::restoreRecovery() {
+    QFile file(recoveryPath());
+    if (!file.open(QIODevice::ReadOnly))
+        return;
+    const QJsonDocument json = QJsonDocument::fromJson(file.readAll());
+    if (!json.isObject() || !json.object().contains(QStringLiteral("text")))
+        return;
+    const QJsonObject recovery = json.object();
+    loadDocumentText(recovery.value(QStringLiteral("text")).toString());
+    setFileUrl(QUrl(recovery.value(QStringLiteral("fileUrl")).toString()));
+    setModified(true);
+    setStatus(QStringLiteral("Recovered unsaved changes"));
+}
+
+void Backend::clearRecovery() {
+    m_recoveryTimer.stop();
+    QFile::remove(recoveryPath());
+}
+
+void Backend::watchCurrentFile() {
+    const QStringList watched = m_fileWatcher.files();
+    if (!watched.isEmpty())
+        m_fileWatcher.removePaths(watched);
+    if (m_fileUrl.isLocalFile() && QFileInfo::exists(m_fileUrl.toLocalFile()))
+        m_fileWatcher.addPath(m_fileUrl.toLocalFile());
 }
 
 QUrl Backend::suggestedSaveUrl() const {
     if (m_fileUrl.isLocalFile())
         return m_fileUrl;
 
-    QString name = currentDocumentText().section(QLatin1Char('\n'), 0, 0).trimmed();
-    name.replace(QRegularExpression(QStringLiteral("[/\\x00-\\x1f\\x7f]")),
-                 QStringLiteral("-"));
-    name = name.left(120).trimmed();
-    if (name.isEmpty() || name == QStringLiteral(".") || name == QStringLiteral(".."))
-        name = QStringLiteral("Untitled");
-    if (!name.endsWith(QStringLiteral(".md"), Qt::CaseInsensitive))
-        name += QStringLiteral(".md");
-
-    return QUrl::fromLocalFile(QDir::home().filePath(name));
+    return QUrl::fromLocalFile(
+        QDir::home().filePath(suggestedFileName(currentDocumentText())));
 }
 
 QString Backend::currentDocumentText() const {
     return m_document ? m_document->toPlainText() : QString();
 }
 
-int Backend::countWords(const QString &text) const {
+int Backend::countWords(const QString &text) {
     static const QRegularExpression wordRe(
         QStringLiteral("[\\p{L}\\p{N}]+(?:['-][\\p{L}\\p{N}]+)*"));
     int count = 0;
@@ -395,6 +527,18 @@ int Backend::countWords(const QString &text) const {
         ++count;
     }
     return count;
+}
+
+QString Backend::suggestedFileName(const QString &text) {
+    QString name = text.section(QLatin1Char('\n'), 0, 0).trimmed();
+    name.replace(QRegularExpression(QStringLiteral("[/\\x00-\\x1f\\x7f]")),
+                 QStringLiteral("-"));
+    name = name.left(120).trimmed();
+    if (name.isEmpty() || name == QStringLiteral(".") || name == QStringLiteral(".."))
+        name = QStringLiteral("Untitled");
+    if (!name.endsWith(QStringLiteral(".md"), Qt::CaseInsensitive))
+        name += QStringLiteral(".md");
+    return name;
 }
 
 void Backend::setWordCount(int words) {
