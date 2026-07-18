@@ -30,18 +30,57 @@ ApplicationWindow {
     property bool searchUpdating: false
     property var searchMatches: []
     property int searchMatchIndex: -1
+    property url pendingOpenUrl
+    property string pendingAction: ""
+    property bool replaceOpen: false
+    property bool awaitingPendingSave: false
+    property real sourceScrollPosition: 0
+    property real previewScrollPosition: 0
 
     Material.theme: darkMode ? Material.Dark : Material.Light
     Material.accent: darkMode ? "#5584aa" : "#2077b2"
     color: pageColor
+
+    onPreviewModeChanged: {
+        if (previewMode) {
+            sourceScrollPosition = editorFlick.contentY;
+            editorFlick.contentY = previewScrollPosition;
+        } else {
+            previewScrollPosition = editorFlick.contentY;
+            editorFlick.contentY = sourceScrollPosition;
+            editor.forceActiveFocus();
+        }
+    }
 
     onClosing: function(close) {
         if (closeConfirmed || !backend.modified)
             return;
 
         close.accepted = false;
+        pendingAction = "close";
         if (!unsavedChangesDialog.opened)
             unsavedChangesDialog.open();
+    }
+
+    function requestOpen(url) {
+        if (!backend.modified) {
+            backend.open(url);
+            return;
+        }
+        pendingOpenUrl = url;
+        pendingAction = "open";
+        unsavedChangesDialog.open();
+    }
+
+    function completePendingAction() {
+        var action = pendingAction;
+        pendingAction = "";
+        if (action === "close") {
+            closeConfirmed = true;
+            close();
+        } else if (action === "open") {
+            backend.open(pendingOpenUrl);
+        }
     }
 
     FontMetrics {
@@ -98,6 +137,7 @@ ApplicationWindow {
         backend.setSearchHighlight("", -1);
         editor.deselect();
         searchUpdating = false;
+        replaceOpen = false;
         editor.forceActiveFocus();
     }
 
@@ -105,6 +145,42 @@ ApplicationWindow {
         sequence: "Ctrl+S"
         context: Qt.ApplicationShortcut
         onActivated: backend.save()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+H"
+        context: Qt.ApplicationShortcut
+        onActivated: {
+            previewMode = false;
+            searchOpen = true;
+            replaceOpen = true;
+            searchField.forceActiveFocus();
+            searchField.selectAll();
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+B"
+        context: Qt.WindowShortcut
+        onActivated: editor.wrapSelection("**", "**")
+    }
+
+    Shortcut {
+        sequence: "Ctrl+I"
+        context: Qt.WindowShortcut
+        onActivated: editor.wrapSelection("*", "*")
+    }
+
+    Shortcut {
+        sequence: "Ctrl+K"
+        context: Qt.WindowShortcut
+        onActivated: editor.insertLink()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+?"
+        context: Qt.ApplicationShortcut
+        onActivated: shortcutsDialog.open()
     }
 
     Shortcut {
@@ -189,6 +265,18 @@ ApplicationWindow {
             win.closeConfirmed = true;
             win.close();
         }
+
+        function onSaveSucceeded() {
+            win.awaitingPendingSave = false;
+            if (win.pendingAction !== "")
+                win.completePendingAction();
+        }
+
+        function onExternalChangeDetected(deleted, locallyModified) {
+            externalChangeDialog.deleted = deleted;
+            externalChangeDialog.locallyModified = locallyModified;
+            externalChangeDialog.open();
+        }
     }
 
     Dialogs.FileDialog {
@@ -196,7 +284,7 @@ ApplicationWindow {
         title: "Open File"
         fileMode: Dialogs.FileDialog.OpenFile
         nameFilters: ["Markdown files (*.md *.markdown)", "All files (*)"]
-        onAccepted: backend.open(selectedFile)
+        onAccepted: win.requestOpen(selectedFile)
     }
 
     Dialogs.FileDialog {
@@ -205,7 +293,11 @@ ApplicationWindow {
         fileMode: Dialogs.FileDialog.SaveFile
         nameFilters: ["Markdown files (*.md *.markdown)", "All files (*)"]
         onAccepted: backend.saveAs(selectedFile)
-        onRejected: backend.fileDialogCanceled()
+        onRejected: {
+            backend.fileDialogCanceled();
+            win.awaitingPendingSave = false;
+            win.pendingAction = "";
+        }
     }
 
     UnsavedChangesDialog {
@@ -218,11 +310,54 @@ ApplicationWindow {
         containerHeight: win.height
 
         onDiscardRequested: {
-            win.closeConfirmed = true;
-            win.close();
+            backend.discardRecovery();
+            win.completePendingAction();
         }
 
-        onSaveRequested: backend.saveForClose()
+        onSaveRequested: {
+            win.awaitingPendingSave = true;
+            backend.save();
+        }
+        onCancelRequested: win.pendingAction = ""
+    }
+
+    Dialog {
+        id: externalChangeDialog
+        property bool deleted: false
+        property bool locallyModified: false
+        modal: true
+        title: deleted ? "File removed" : "File changed"
+        standardButtons: Dialog.NoButton
+        anchors.centerIn: parent
+        contentItem: ColumnLayout {
+            spacing: 16
+            Label {
+                text: externalChangeDialog.deleted
+                    ? "This file was removed outside Omawrite. Keep your text as an unsaved document?"
+                    : (externalChangeDialog.locallyModified
+                       ? "This file changed outside Omawrite. Reloading will discard your changes."
+                       : "This file changed outside Omawrite.")
+                wrapMode: Text.Wrap
+                Layout.preferredWidth: 420
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                Button { text: "Keep Mine"; onClicked: { backend.keepExternalVersion(); externalChangeDialog.close(); } }
+                Button { text: "Reload"; enabled: !externalChangeDialog.deleted; onClicked: { backend.reloadFromDisk(); externalChangeDialog.close(); } }
+            }
+        }
+    }
+
+    Dialog {
+        id: shortcutsDialog
+        modal: true
+        title: "Keyboard shortcuts"
+        standardButtons: Dialog.Close
+        anchors.centerIn: parent
+        contentItem: Label {
+            text: "Ctrl+S  Save\nCtrl+Shift+S  Save As\nCtrl+O  Open\nCtrl+N  New Window\nCtrl+F  Find\nCtrl+H  Find and Replace\nCtrl+B  Bold\nCtrl+I  Italic\nCtrl+K  Link\nCtrl+E  Preview\nCtrl+P  Print\nF11 / Super+F  Fullscreen\nCtrl+?  Shortcuts"
+            lineHeight: 1.5
+        }
     }
 
     Item {
@@ -296,6 +431,66 @@ ApplicationWindow {
                     }
                     insert(cursorPosition, replacement);
                     cursorPosition += replacement.length;
+                }
+
+                function wrapSelection(before, after) {
+                    previewMode = false;
+                    forceActiveFocus();
+                    var start = Math.min(selectionStart, selectionEnd);
+                    var end = Math.max(selectionStart, selectionEnd);
+                    var selected = text.slice(start, end);
+                    remove(start, end);
+                    insert(start, before + selected + after);
+                    if (selected.length > 0)
+                        select(start + before.length, start + before.length + selected.length);
+                    else
+                        cursorPosition = start + before.length;
+                }
+
+                function insertLink() {
+                    var start = Math.min(selectionStart, selectionEnd);
+                    var end = Math.max(selectionStart, selectionEnd);
+                    var selected = text.slice(start, end);
+                    var url = backend.clipboardUrl();
+                    var label = selected.length > 0 ? selected : "link text";
+                    var destination = url.length > 0 ? url : "https://";
+                    remove(start, end);
+                    var markdown = "[" + escapeMarkdownLinkText(label) + "](" + escapeMarkdownLinkDestination(destination) + ")";
+                    insert(start, markdown);
+                    if (selected.length === 0)
+                        select(start + 1, start + 1 + label.length);
+                    else if (url.length === 0)
+                        select(start + label.length + 3, start + markdown.length - 1);
+                }
+
+                function smartReturn(softBreak) {
+                    if (softBreak) {
+                        replaceSelectionWith("\n");
+                        return;
+                    }
+                    var lineStart = text.lastIndexOf("\n", cursorPosition - 1) + 1;
+                    var line = text.slice(lineStart, cursorPosition);
+                    var before = text.slice(0, cursorPosition);
+                    var fences = (before.match(/^\s*```/gm) || []).length;
+                    if ((fences % 2) === 1) {
+                        replaceSelectionWith("\n");
+                        return;
+                    }
+                    var match = line.match(/^(\s*)([-+*]|\d+[.)]|>+)\s+(.*)$/);
+                    if (match) {
+                        if (match[3].length === 0) {
+                            remove(lineStart, cursorPosition);
+                            cursorPosition = lineStart;
+                            replaceSelectionWith("\n");
+                        } else {
+                            var marker = match[2];
+                            if (/^\d/.test(marker))
+                                marker = (parseInt(marker) + 1) + marker.slice(-1);
+                            replaceSelectionWith("\n" + match[1] + marker + " ");
+                        }
+                        return;
+                    }
+                    replaceSelectionWith("\n\n");
                 }
 
                 function escapeMarkdownLinkText(linkText) {
@@ -420,7 +615,7 @@ ApplicationWindow {
                     var returnKey = event.key === Qt.Key_Return || event.key === Qt.Key_Enter;
                     var commandModifier = event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier);
                     if (returnKey && !commandModifier) {
-                        replaceSelectionWith((event.modifiers & Qt.ShiftModifier) ? "\n" : "\n\n");
+                        smartReturn(event.modifiers & Qt.ShiftModifier);
                         event.accepted = true;
                     } else if (!commandModifier && event.key === Qt.Key_Backspace
                                && deleteParagraphBreakBehindCursor()) {
@@ -484,6 +679,7 @@ ApplicationWindow {
                 font.pixelSize: win.editorFontPixelSize
                 font.weight: Font.Normal
                 renderType: TextEdit.NativeRendering
+                onLinkActivated: function(link) { backend.openExternalUrl(link); }
             }
         }
 
@@ -510,7 +706,7 @@ ApplicationWindow {
             }
 
             Label {
-                text: backend.modified ? "unsaved" : backend.status
+                text: backend.status
                 color: win.mutedColor
                 font.family: "iA Writer Mono S"
                 font.pixelSize: 11
@@ -540,7 +736,7 @@ ApplicationWindow {
             anchors.topMargin: 12
             anchors.leftMargin: 12
             anchors.rightMargin: 12
-            height: 56
+            height: win.replaceOpen ? 104 : 56
             visible: win.searchOpen
             z: 10
             leftPadding: 16
@@ -564,7 +760,10 @@ ApplicationWindow {
 
                     TextInput {
                         id: searchField
-                        anchors.fill: parent
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        height: win.replaceOpen ? parent.height / 2 : parent.height
                         verticalAlignment: TextInput.AlignVCenter
                         selectByMouse: true
                         color: win.textColor
@@ -583,8 +782,31 @@ ApplicationWindow {
                         }
                     }
 
+                    TextInput {
+                        id: replaceField
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        height: parent.height / 2
+                        visible: win.replaceOpen
+                        verticalAlignment: TextInput.AlignVCenter
+                        color: win.textColor
+                        selectionColor: win.selectionFill
+                        selectedTextColor: win.strongTextColor
+                        font.pixelSize: 17
+                        Keys.onReturnPressed: replaceCurrentButton.clicked()
+                    }
+
                     Label {
-                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.verticalCenter: replaceField.verticalCenter
+                        text: "Replace with"
+                        visible: win.replaceOpen && replaceField.text.length === 0
+                        color: win.mutedColor
+                        font.pixelSize: 17
+                    }
+
+                    Label {
+                        anchors.verticalCenter: searchField.verticalCenter
                         text: "Find"
                         visible: searchField.text.length === 0
                         color: win.mutedColor
@@ -602,6 +824,33 @@ ApplicationWindow {
                         : (win.searchMatchIndex + 1) + "/" + win.searchMatches.length
                     color: win.darkMode ? win.textColor : "#62635f"
                     font.pixelSize: 16
+                }
+
+                Button {
+                    id: replaceCurrentButton
+                    visible: win.replaceOpen
+                    text: "Replace"
+                    onClicked: {
+                        if (win.searchMatchIndex < 0) return;
+                        var start = win.searchMatches[win.searchMatchIndex];
+                        editor.remove(start, start + searchField.text.length);
+                        editor.insert(start, replaceField.text);
+                        win.updateSearch();
+                    }
+                }
+
+                Button {
+                    visible: win.replaceOpen
+                    text: "All"
+                    onClicked: {
+                        if (searchField.text.length === 0) return;
+                        for (var i = win.searchMatches.length - 1; i >= 0; --i) {
+                            var start = win.searchMatches[i];
+                            editor.remove(start, start + searchField.text.length);
+                            editor.insert(start, replaceField.text);
+                        }
+                        win.updateSearch();
+                    }
                 }
 
                 Rectangle {
@@ -630,5 +879,16 @@ ApplicationWindow {
             }
         }
     }
+
+    Component.onCompleted: {
+        var geometry = backend.windowGeometry();
+        if (geometry.x >= 0) x = geometry.x;
+        if (geometry.y >= 0) y = geometry.y;
+        width = geometry.width;
+        height = geometry.height;
+        if (geometry.maximized) showMaximized();
+    }
+
+    Component.onDestruction: backend.saveWindowGeometry(x, y, width, height, visibility === Window.Maximized)
 
 }

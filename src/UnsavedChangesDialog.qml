@@ -14,10 +14,12 @@ Dialog {
 
     signal saveRequested()
     signal discardRequested()
+    signal cancelRequested()
 
     modal: true
     focus: true
     closePolicy: Popup.CloseOnEscape
+    onRejected: cancelRequested()
 
     onOpened: saveButton.forceActiveFocus()
     width: Math.min(420, containerWidth - 48)
@@ -71,7 +73,7 @@ Dialog {
                 KeyNavigation.right: discardButton
                 KeyNavigation.tab: discardButton
                 KeyNavigation.backtab: saveButton
-                onClicked: root.close()
+                onClicked: root.reject()
             }
 
             SquareDialogButton {
