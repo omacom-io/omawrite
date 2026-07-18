@@ -21,9 +21,18 @@ Install via the Omarchy Package Repository via the `omawrite` package. It's inst
 - `Super+F` toggles fullscreen. Qt maps this key as `Meta+F`.
 - `Ctrl+E` toggles between source editing and rendered Markdown preview.
 - `Ctrl+F` searches the document. Use `Enter` or `Ctrl+G` for the next match and `Shift+Enter` for the previous match.
+- `Ctrl+H` opens find and replace.
+- `Ctrl+B`, `Ctrl+I`, and `Ctrl+K` insert bold, italic, and link Markdown.
+- `Ctrl+?` shows the keyboard shortcut reference.
+
+Unsaved drafts are recovered after an abnormal exit. Omawrite also watches open files
+and warns before an external change can replace local work.
 
 ## Requirements
 
 - Qt 6: `qt6-base`, `qt6-declarative`, `qt6-quickcontrols2`
 - `xdg-desktop-portal` and a portal backend
-- `ttf-ia-writer` for the iA Writer Mono S font
+
+The iA Writer Mono font is bundled under the SIL Open Font License 1.1; see
+`fonts/OFL.txt`. The font is copyright Information Architects Inc. and based on
+IBM Plex, copyright IBM Corp.
