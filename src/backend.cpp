@@ -98,7 +98,20 @@ Backend::Backend(QObject *parent) : QObject(parent) {
             [this](const QString &path) {
                 if (path != m_fileUrl.toLocalFile())
                     return;
-                emit externalChangeDetected(!QFileInfo::exists(path), m_modified);
+
+                const bool deleted = !QFileInfo::exists(path);
+                if (!deleted && m_hasKnownFileContents) {
+                    QFile file(path);
+                    if (file.open(QIODevice::ReadOnly)
+                            && file.readAll() == m_lastKnownFileContents) {
+                        // Atomic saves can replace the watched inode. Re-arm the
+                        // watcher, but do not report our own save as an outside edit.
+                        watchCurrentFile();
+                        return;
+                    }
+                }
+
+                emit externalChangeDetected(deleted, m_modified);
             });
 }
 
@@ -176,8 +189,11 @@ void Backend::open(const QUrl &url) {
         return;
     }
 
-    loadDocumentText(QString::fromUtf8(file.readAll()));
+    const QByteArray contents = file.readAll();
+    loadDocumentText(QString::fromUtf8(contents));
     clearRecovery();
+    m_lastKnownFileContents = contents;
+    m_hasKnownFileContents = true;
     setFileUrl(url);
     watchCurrentFile();
     setModified(false);
@@ -225,6 +241,14 @@ void Backend::reloadFromDisk() {
 }
 
 void Backend::keepExternalVersion() {
+    QFile file(m_fileUrl.toLocalFile());
+    if (file.open(QIODevice::ReadOnly)) {
+        m_lastKnownFileContents = file.readAll();
+        m_hasKnownFileContents = true;
+    } else {
+        m_lastKnownFileContents.clear();
+        m_hasKnownFileContents = false;
+    }
     setModified(true);
     scheduleRecovery();
     watchCurrentFile();
@@ -432,11 +456,19 @@ void Backend::saveTo(const QUrl &url) {
         return;
     }
 
-    file.write(currentDocumentText().toUtf8());
+    const QByteArray contents = currentDocumentText().toUtf8();
+    file.write(contents);
+
+    // QSaveFile commits by replacing the target. Stop watching the old inode
+    // before that replacement so our own write is not classified as external.
+    const QStringList watched = m_fileWatcher.files();
+    if (!watched.isEmpty())
+        m_fileWatcher.removePaths(watched);
 
     // commit() flushes, fsyncs, and atomically renames the temp file into place,
     // returning false (and leaving the original untouched) on any write error.
     if (!file.commit()) {
+        watchCurrentFile();
         m_closeAfterSave = false;
         setStatus(QStringLiteral("Could not write %1.").arg(targetName));
         return;
@@ -444,7 +476,10 @@ void Backend::saveTo(const QUrl &url) {
 
     const bool shouldClose = m_closeAfterSave;
     m_closeAfterSave = false;
+    m_lastKnownFileContents = contents;
+    m_hasKnownFileContents = true;
     setFileUrl(url);
+    watchCurrentFile();
     setModified(false);
     setStatus(QStringLiteral("Saved %1").arg(fileName()));
     clearRecovery();
@@ -487,7 +522,16 @@ void Backend::restoreRecovery() {
         return;
     const QJsonObject recovery = json.object();
     loadDocumentText(recovery.value(QStringLiteral("text")).toString());
-    setFileUrl(QUrl(recovery.value(QStringLiteral("fileUrl")).toString()));
+    const QUrl recoveredUrl(recovery.value(QStringLiteral("fileUrl")).toString());
+    QFile diskFile(recoveredUrl.toLocalFile());
+    if (recoveredUrl.isLocalFile() && diskFile.open(QIODevice::ReadOnly)) {
+        m_lastKnownFileContents = diskFile.readAll();
+        m_hasKnownFileContents = true;
+    } else {
+        m_lastKnownFileContents.clear();
+        m_hasKnownFileContents = false;
+    }
+    setFileUrl(recoveredUrl);
     setModified(true);
     setStatus(QStringLiteral("Recovered unsaved changes"));
 }

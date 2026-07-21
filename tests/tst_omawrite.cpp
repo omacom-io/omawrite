@@ -40,6 +40,30 @@ private slots:
         QCOMPARE(markup.at(2).content.length, 4);
         QCOMPARE(markup.at(2).markers[0].length, 1);
     }
+
+    void ignoresFileWatcherEventsForSavedContents() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+
+        const QString path = directory.filePath(QStringLiteral("first-save.md"));
+        Backend backend;
+        QSignalSpy externalChangeSpy(&backend, &Backend::externalChangeDetected);
+
+        backend.saveAs(QUrl::fromLocalFile(path));
+        QVERIFY(QFileInfo::exists(path));
+
+        QFile sameContents(path);
+        QVERIFY(sameContents.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        sameContents.close();
+        QTest::qWait(100);
+        QCOMPARE(externalChangeSpy.count(), 0);
+
+        QFile changedContents(path);
+        QVERIFY(changedContents.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        QCOMPARE(changedContents.write("changed elsewhere"), qint64(17));
+        changedContents.close();
+        QTRY_COMPARE(externalChangeSpy.count(), 1);
+    }
 };
 
 QTEST_MAIN(OmawriteTest)

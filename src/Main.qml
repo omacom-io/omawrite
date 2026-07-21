@@ -321,31 +321,16 @@ ApplicationWindow {
         onCancelRequested: win.pendingAction = ""
     }
 
-    Dialog {
+    ExternalChangeDialog {
         id: externalChangeDialog
-        property bool deleted: false
-        property bool locallyModified: false
-        modal: true
-        title: deleted ? "File removed" : "File changed"
-        standardButtons: Dialog.NoButton
-        anchors.centerIn: parent
-        contentItem: ColumnLayout {
-            spacing: 16
-            Label {
-                text: externalChangeDialog.deleted
-                    ? "This file was removed outside Omawrite. Keep your text as an unsaved document?"
-                    : (externalChangeDialog.locallyModified
-                       ? "This file changed outside Omawrite. Reloading will discard your changes."
-                       : "This file changed outside Omawrite.")
-                wrapMode: Text.Wrap
-                Layout.preferredWidth: 420
-            }
-            RowLayout {
-                Layout.alignment: Qt.AlignRight
-                Button { text: "Keep Mine"; onClicked: { backend.keepExternalVersion(); externalChangeDialog.close(); } }
-                Button { text: "Reload"; enabled: !externalChangeDialog.deleted; onClicked: { backend.reloadFromDisk(); externalChangeDialog.close(); } }
-            }
-        }
+        darkMode: win.darkMode
+        textColor: win.textColor
+        strongTextColor: win.strongTextColor
+        containerWidth: win.width
+        containerHeight: win.height
+
+        onKeepRequested: backend.keepExternalVersion()
+        onReloadRequested: backend.reloadFromDisk()
     }
 
     Dialog {
