@@ -4,6 +4,7 @@ import QtQuick.Controls.Material
 import QtQuick.Dialogs as Dialogs
 import QtQuick.Layouts
 import QtQuick.Window
+import "EditorMutations.js" as EditorMutations
 
 ApplicationWindow {
     id: win
@@ -410,12 +411,7 @@ ApplicationWindow {
                 function replaceSelectionWith(replacement) {
                     var start = Math.min(selectionStart, selectionEnd);
                     var end = Math.max(selectionStart, selectionEnd);
-                    if (start !== end) {
-                        remove(start, end);
-                        cursorPosition = start;
-                    }
-                    insert(cursorPosition, replacement);
-                    cursorPosition += replacement.length;
+                    EditorMutations.replaceRange(editor, start, end, replacement);
                 }
 
                 function wrapSelection(before, after) {
@@ -424,12 +420,10 @@ ApplicationWindow {
                     var start = Math.min(selectionStart, selectionEnd);
                     var end = Math.max(selectionStart, selectionEnd);
                     var selected = text.slice(start, end);
-                    remove(start, end);
-                    insert(start, before + selected + after);
-                    if (selected.length > 0)
-                        select(start + before.length, start + before.length + selected.length);
-                    else
-                        cursorPosition = start + before.length;
+                    EditorMutations.replaceRange(editor, start, end,
+                                                 before + selected + after,
+                                                 before.length,
+                                                 before.length + selected.length);
                 }
 
                 function insertLink() {
@@ -439,13 +433,18 @@ ApplicationWindow {
                     var url = backend.clipboardUrl();
                     var label = selected.length > 0 ? selected : "link text";
                     var destination = url.length > 0 ? url : "https://";
-                    remove(start, end);
-                    var markdown = "[" + escapeMarkdownLinkText(label) + "](" + escapeMarkdownLinkDestination(destination) + ")";
-                    insert(start, markdown);
-                    if (selected.length === 0)
-                        select(start + 1, start + 1 + label.length);
-                    else if (url.length === 0)
-                        select(start + label.length + 3, start + markdown.length - 1);
+                    var escapedLabel = escapeMarkdownLinkText(label);
+                    var markdown = "[" + escapedLabel + "](" + escapeMarkdownLinkDestination(destination) + ")";
+                    if (selected.length === 0) {
+                        EditorMutations.replaceRange(editor, start, end, markdown,
+                                                     1, 1 + escapedLabel.length);
+                    } else if (url.length === 0) {
+                        EditorMutations.replaceRange(editor, start, end, markdown,
+                                                     escapedLabel.length + 3,
+                                                     markdown.length - 1);
+                    } else {
+                        EditorMutations.replaceRange(editor, start, end, markdown);
+                    }
                 }
 
                 function smartReturn(softBreak) {
@@ -464,9 +463,8 @@ ApplicationWindow {
                     var match = line.match(/^(\s*)([-+*]|\d+[.)]|>+)\s+(.*)$/);
                     if (match) {
                         if (match[3].length === 0) {
-                            remove(lineStart, cursorPosition);
-                            cursorPosition = lineStart;
-                            replaceSelectionWith("\n");
+                            EditorMutations.replaceRange(editor, lineStart,
+                                                         cursorPosition, "\n");
                         } else {
                             var marker = match[2];
                             if (/^\d/.test(marker))
@@ -818,8 +816,9 @@ ApplicationWindow {
                     onClicked: {
                         if (win.searchMatchIndex < 0) return;
                         var start = win.searchMatches[win.searchMatchIndex];
-                        editor.remove(start, start + searchField.text.length);
-                        editor.insert(start, replaceField.text);
+                        EditorMutations.replaceRange(editor, start,
+                                                     start + searchField.text.length,
+                                                     replaceField.text);
                         win.updateSearch();
                     }
                 }
@@ -831,8 +830,9 @@ ApplicationWindow {
                         if (searchField.text.length === 0) return;
                         for (var i = win.searchMatches.length - 1; i >= 0; --i) {
                             var start = win.searchMatches[i];
-                            editor.remove(start, start + searchField.text.length);
-                            editor.insert(start, replaceField.text);
+                            EditorMutations.replaceRange(editor, start,
+                                                         start + searchField.text.length,
+                                                         replaceField.text);
                         }
                         win.updateSearch();
                     }

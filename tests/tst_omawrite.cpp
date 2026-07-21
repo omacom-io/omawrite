@@ -1,4 +1,6 @@
 #include <QtTest>
+#include <QQmlComponent>
+#include <QQmlEngine>
 
 #include "backend.h"
 #include "markdownhighlighter.h"
@@ -63,6 +65,56 @@ private slots:
         QCOMPARE(changedContents.write("changed elsewhere"), qint64(17));
         changedContents.close();
         QTRY_COMPARE(externalChangeSpy.count(), 1);
+    }
+
+    void keepsCursorAndSelectionStableAcrossInsertions() {
+        const QString mutationsPath = QFINDTESTDATA("../src/EditorMutations.js");
+        QVERIFY(!mutationsPath.isEmpty());
+
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        const QByteArray harness = R"QML(
+            import QtQuick
+            import "EditorMutations.js" as EditorMutations
+
+            TextEdit {
+                property string insertionText
+                property int insertionCursor
+                property string wrappedText
+                property int wrappedSelectionStart
+                property int wrappedSelectionEnd
+
+                Component.onCompleted: {
+                    text = "alpha omega";
+                    cursorPosition = 5;
+                    EditorMutations.replaceRange(this, 5, 5, "one\r\ntwo");
+                    insertionText = text;
+                    insertionCursor = cursorPosition;
+
+                    text = "alpha beta omega";
+                    select(6, 10);
+                    EditorMutations.replaceRange(this, selectionStart, selectionEnd,
+                                                 "**beta**", 2, 6);
+                    wrappedText = text;
+                    wrappedSelectionStart = selectionStart;
+                    wrappedSelectionEnd = selectionEnd;
+                }
+            }
+        )QML";
+        const QUrl harnessUrl = QUrl::fromLocalFile(
+            QFileInfo(mutationsPath).absolutePath() + QStringLiteral("/MutationHarness.qml"));
+        component.setData(harness, harnessUrl);
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> editor(component.create());
+        QVERIFY2(editor, qPrintable(component.errorString()));
+
+        QCOMPARE(editor->property("insertionText").toString(),
+                 QStringLiteral("alphaone\ntwo omega"));
+        QCOMPARE(editor->property("insertionCursor").toInt(), 12);
+        QCOMPARE(editor->property("wrappedText").toString(),
+                 QStringLiteral("alpha **beta** omega"));
+        QCOMPARE(editor->property("wrappedSelectionStart").toInt(), 8);
+        QCOMPARE(editor->property("wrappedSelectionEnd").toInt(), 12);
     }
 };
 
