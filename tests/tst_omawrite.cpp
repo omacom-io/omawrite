@@ -9,6 +9,13 @@ class OmawriteTest : public QObject {
     Q_OBJECT
 
 private slots:
+    void initTestCase() {
+        QVERIFY(m_settingsDirectory.isValid());
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
+                           m_settingsDirectory.path());
+    }
+
     void countsWords() {
         QCOMPARE(Backend::countWords(QStringLiteral("one two-three don't 42")), 4);
         QCOMPARE(Backend::countWords(QStringLiteral("你好 世界")), 2);
@@ -116,6 +123,37 @@ private slots:
         QCOMPARE(editor->property("wrappedSelectionStart").toInt(), 8);
         QCOMPARE(editor->property("wrappedSelectionEnd").toInt(), 12);
     }
+
+    void remembersLastSaveDirectory() {
+        QTemporaryDir saveDirectory;
+        QVERIFY(saveDirectory.isValid());
+
+        const QString savedPath = saveDirectory.filePath(QStringLiteral("first.md"));
+        Backend savedDocument;
+        savedDocument.saveAs(QUrl::fromLocalFile(savedPath));
+
+        Backend nextDocument;
+        QSignalSpy saveDialogSpy(&nextDocument, &Backend::saveDialogRequested);
+        nextDocument.saveAsDialog();
+        QCOMPARE(saveDialogSpy.count(), 1);
+
+        const QUrl suggestedUrl = saveDialogSpy.takeFirst().constFirst().toUrl();
+        QCOMPARE(QFileInfo(suggestedUrl.toLocalFile()).absolutePath(),
+                 saveDirectory.path());
+        QCOMPARE(QFileInfo(suggestedUrl.toLocalFile()).fileName(),
+                 QStringLiteral("Untitled.md"));
+
+        QSettings().setValue(QStringLiteral("file/lastSaveDirectory"),
+                             saveDirectory.filePath(QStringLiteral("missing")));
+        Backend fallbackDocument;
+        QSignalSpy fallbackDialogSpy(&fallbackDocument, &Backend::saveDialogRequested);
+        fallbackDocument.saveAsDialog();
+        const QUrl fallbackUrl = fallbackDialogSpy.takeFirst().constFirst().toUrl();
+        QCOMPARE(QFileInfo(fallbackUrl.toLocalFile()).absolutePath(), QDir::homePath());
+    }
+
+private:
+    QTemporaryDir m_settingsDirectory;
 };
 
 QTEST_MAIN(OmawriteTest)

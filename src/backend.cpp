@@ -32,6 +32,7 @@
 #include "markdownhighlighter.h"
 
 constexpr qreal typoraLineHeightPercent = 140;
+const QString lastSaveDirectorySetting = QStringLiteral("file/lastSaveDirectory");
 
 QString Backend::normalizedLinkUrl(const QString &clipboardText) {
     QString candidate = clipboardText.trimmed();
@@ -480,6 +481,8 @@ void Backend::saveTo(const QUrl &url) {
     m_hasKnownFileContents = true;
     setFileUrl(url);
     watchCurrentFile();
+    QSettings().setValue(lastSaveDirectorySetting,
+                         QFileInfo(url.toLocalFile()).absolutePath());
     setModified(false);
     setStatus(QStringLiteral("Saved %1").arg(fileName()));
     clearRecovery();
@@ -553,8 +556,12 @@ QUrl Backend::suggestedSaveUrl() const {
     if (m_fileUrl.isLocalFile())
         return m_fileUrl;
 
+    const QString savedDirectory = QSettings().value(lastSaveDirectorySetting).toString();
+    const QDir directory = savedDirectory.isEmpty() || !QDir(savedDirectory).exists()
+        ? QDir::home()
+        : QDir(savedDirectory);
     return QUrl::fromLocalFile(
-        QDir::home().filePath(suggestedFileName(currentDocumentText())));
+        directory.filePath(suggestedFileName(currentDocumentText())));
 }
 
 QString Backend::currentDocumentText() const {
