@@ -285,6 +285,7 @@ ApplicationWindow {
         darkMode: win.darkMode
         textColor: win.textColor
         strongTextColor: win.strongTextColor
+        activeButtonColor: backend.themeAccent
         containerWidth: win.width
         containerHeight: win.height
 
