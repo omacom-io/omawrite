@@ -1,6 +1,8 @@
 #include <QtTest>
 #include <QQmlComponent>
+#include <QQmlContext>
 #include <QQmlEngine>
+#include <QQuickStyle>
 
 #include "backend.h"
 #include "markdownhighlighter.h"
@@ -11,6 +13,7 @@ class OmawriteTest : public QObject {
 private slots:
     void initTestCase() {
         QVERIFY(m_settingsDirectory.isValid());
+        QQuickStyle::setStyle(QStringLiteral("Material"));
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
                            m_settingsDirectory.path());
@@ -122,6 +125,36 @@ private slots:
                  QStringLiteral("alpha **beta** omega"));
         QCOMPARE(editor->property("wrappedSelectionStart").toInt(), 8);
         QCOMPARE(editor->property("wrappedSelectionEnd").toInt(), 12);
+    }
+
+    void savesAndOpensFromFooterButtons() {
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QVERIFY(!mainQmlPath.isEmpty());
+
+        Backend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        QVERIFY(window->findChild<QObject *>(QStringLiteral("sourceEditor")));
+        QVERIFY(!window->findChild<QObject *>(QStringLiteral("renderedPreview")));
+        QVERIFY(!window->findChild<QObject *>(QStringLiteral("modeToggle")));
+
+        QObject *saveButton = window->findChild<QObject *>(QStringLiteral("saveButton"));
+        QObject *openButton = window->findChild<QObject *>(QStringLiteral("openButton"));
+        QVERIFY(saveButton);
+        QVERIFY(openButton);
+
+        QSignalSpy saveDialogSpy(&backend, &Backend::saveDialogRequested);
+        QVERIFY(QMetaObject::invokeMethod(saveButton, "clicked"));
+        QCOMPARE(saveDialogSpy.count(), 1);
+
+        QSignalSpy openDialogSpy(&backend, &Backend::openDialogRequested);
+        QVERIFY(QMetaObject::invokeMethod(openButton, "clicked"));
+        QCOMPARE(openDialogSpy.count(), 1);
     }
 
     void remembersLastSaveDirectory() {

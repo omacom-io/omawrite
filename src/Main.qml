@@ -25,7 +25,6 @@ ApplicationWindow {
     readonly property int editorWidth: Math.min(
         Math.round(writerFontMetrics.averageCharacterWidth * 65),
         Math.max(360, width - Math.round(writerFontMetrics.averageCharacterWidth * 20)))
-    property bool previewMode: false
     property bool closeConfirmed: false
     property bool searchOpen: false
     property bool searchUpdating: false
@@ -35,23 +34,10 @@ ApplicationWindow {
     property string pendingAction: ""
     property bool replaceOpen: false
     property bool awaitingPendingSave: false
-    property real sourceScrollPosition: 0
-    property real previewScrollPosition: 0
 
     Material.theme: darkMode ? Material.Dark : Material.Light
     Material.accent: darkMode ? "#5584aa" : "#2077b2"
     color: pageColor
-
-    onPreviewModeChanged: {
-        if (previewMode) {
-            sourceScrollPosition = editorFlick.contentY;
-            editorFlick.contentY = previewScrollPosition;
-        } else {
-            previewScrollPosition = editorFlick.contentY;
-            editorFlick.contentY = sourceScrollPosition;
-            editor.forceActiveFocus();
-        }
-    }
 
     onClosing: function(close) {
         if (closeConfirmed || !backend.modified)
@@ -152,7 +138,6 @@ ApplicationWindow {
         sequence: "Ctrl+H"
         context: Qt.ApplicationShortcut
         onActivated: {
-            previewMode = false;
             searchOpen = true;
             replaceOpen = true;
             searchField.forceActiveFocus();
@@ -227,16 +212,9 @@ ApplicationWindow {
     }
 
     Shortcut {
-        sequence: "Ctrl+E"
-        context: Qt.ApplicationShortcut
-        onActivated: previewMode = !previewMode
-    }
-
-    Shortcut {
         sequence: "Ctrl+F"
         context: Qt.ApplicationShortcut
         onActivated: {
-            previewMode = false;
             searchOpen = true;
             searchField.forceActiveFocus();
             searchField.selectAll();
@@ -341,7 +319,7 @@ ApplicationWindow {
         standardButtons: Dialog.Close
         anchors.centerIn: parent
         contentItem: Label {
-            text: "Ctrl+S  Save\nCtrl+Shift+S  Save As\nCtrl+O  Open\nCtrl+N  New Window\nCtrl+F  Find\nCtrl+H  Find and Replace\nCtrl+B  Bold\nCtrl+I  Italic\nCtrl+K  Link\nCtrl+E  Preview\nCtrl+P  Print\nF11 / Super+F  Fullscreen\nCtrl+?  Shortcuts"
+            text: "Ctrl+S  Save\nCtrl+Shift+S  Save As\nCtrl+O  Open\nCtrl+N  New Window\nCtrl+F  Find\nCtrl+H  Find and Replace\nCtrl+B  Bold\nCtrl+I  Italic\nCtrl+K  Link\nCtrl+P  Print\nF11 / Super+F  Fullscreen\nCtrl+?  Shortcuts"
             lineHeight: 1.5
         }
     }
@@ -356,9 +334,7 @@ ApplicationWindow {
             anchors.rightMargin: 24
             clip: true
             contentWidth: width
-            contentHeight: Math.max(height, (previewMode
-                ? preview.y + preview.implicitHeight
-                : editor.y + editor.implicitHeight) + 220)
+            contentHeight: Math.max(height, editor.y + editor.implicitHeight + 220)
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar {
                 policy: ScrollBar.AsNeeded
@@ -368,9 +344,6 @@ ApplicationWindow {
             // Keep the editing caret within the viewport so writing past the
             // bottom edge scrolls the page along with the text.
             function ensureCursorVisible() {
-                if (previewMode)
-                    return;
-
                 var margin = win.editorFontPixelSize * 2;
                 var cursorTop = editor.y + editor.cursorRectangle.y;
                 var cursorBottom = cursorTop + editor.cursorRectangle.height;
@@ -384,11 +357,11 @@ ApplicationWindow {
 
             TextEdit {
                 id: editor
+                objectName: "sourceEditor"
                 x: Math.round((editorFlick.width - width) / 2)
                 y: Math.max(42, Math.round(win.height * 0.05))
                 width: win.editorWidth
                 height: Math.max(editorFlick.height - y - 96, implicitHeight + 20)
-                visible: !previewMode
                 text: ""
                 textFormat: TextEdit.PlainText
                 wrapMode: TextEdit.Wrap
@@ -415,7 +388,6 @@ ApplicationWindow {
                 }
 
                 function wrapSelection(before, after) {
-                    previewMode = false;
                     forceActiveFocus();
                     var start = Math.min(selectionStart, selectionEnd);
                     var end = Math.max(selectionStart, selectionEnd);
@@ -643,30 +615,10 @@ ApplicationWindow {
                     forceActiveFocus();
                 }
             }
-
-            TextEdit {
-                id: preview
-                x: Math.round((editorFlick.width - width) / 2)
-                y: Math.max(42, Math.round(win.height * 0.05))
-                width: win.editorWidth
-                visible: previewMode
-                readOnly: true
-                text: win.previewMode ? editor.text : ""
-                textFormat: TextEdit.MarkdownText
-                wrapMode: TextEdit.Wrap
-                selectByMouse: true
-                color: win.textColor
-                selectionColor: win.selectionFill
-                selectedTextColor: win.strongTextColor
-                font.family: "iA Writer Mono S"
-                font.pixelSize: win.editorFontPixelSize
-                font.weight: Font.Normal
-                renderType: TextEdit.NativeRendering
-                onLinkActivated: function(link) { backend.openExternalUrl(link); }
-            }
         }
 
         Row {
+            id: footerStatus
             anchors.left: parent.left
             anchors.bottom: parent.bottom
             anchors.leftMargin: 12
@@ -674,18 +626,20 @@ ApplicationWindow {
             spacing: 12
             opacity: 0.55
 
-            Label {
-                text: previewMode ? "A" : "#"
-                color: win.mutedColor
-                font.family: "iA Writer Mono S"
-                font.pixelSize: 12
-                font.bold: true
+            FooterIconButton {
+                objectName: "saveButton"
+                iconName: "save"
+                iconColor: win.mutedColor
+                tooltip: "Save"
+                onClicked: backend.save()
+            }
 
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: previewMode = !previewMode
-                }
+            FooterIconButton {
+                objectName: "openButton"
+                iconName: "open"
+                iconColor: win.mutedColor
+                tooltip: "Open"
+                onClicked: backend.openDialog()
             }
 
             Label {
@@ -696,6 +650,8 @@ ApplicationWindow {
                 visible: text !== ""
                 elide: Text.ElideRight
                 width: Math.min(360, win.width / 3)
+                height: 16
+                verticalAlignment: Text.AlignVCenter
             }
         }
 
