@@ -2,6 +2,7 @@
 
 #include <QColor>
 #include <QFont>
+#include <QFontMetricsF>
 #include <QTextDocument>
 
 MarkdownHighlighter::MarkdownHighlighter(QTextDocument *document)
@@ -42,10 +43,20 @@ void MarkdownHighlighter::rebuildFormats() {
     m_markerFormat = QTextCharFormat();
     m_markerFormat.setForeground(marker);
 
+    // A sub-pixel font size combined with a stretch factor used to make these
+    // markers occupy (close to) zero space, but that combination deadlocks Qt's
+    // font metrics engine on some platforms. Instead, use a normal font size and
+    // cancel out its advance width with negative absolute letter-spacing.
     m_hiddenMarkerFormat = QTextCharFormat();
     m_hiddenMarkerFormat.setForeground(background);
-    m_hiddenMarkerFormat.setFontPointSize(0.1);
-    m_hiddenMarkerFormat.setFontStretch(1);
+    m_hiddenMarkerFormat.setFontPointSize(1.0);
+
+    QFont hiddenFont = document() ? document()->defaultFont() : QFont();
+    hiddenFont.setPointSizeF(1.0);
+    const qreal charWidth = QFontMetricsF(hiddenFont).horizontalAdvance(QLatin1Char('['));
+
+    m_hiddenMarkerFormat.setFontLetterSpacingType(QFont::AbsoluteSpacing);
+    m_hiddenMarkerFormat.setFontLetterSpacing(-charWidth);
 
     m_headingFormat = QTextCharFormat();
     m_headingFormat.setForeground(text);
