@@ -19,6 +19,19 @@ void MarkdownHighlighter::setDarkMode(bool darkMode) {
     rehighlight();
 }
 
+void MarkdownHighlighter::setColors(const QString &background, const QString &foreground,
+                                    const QString &accent) {
+    if (m_customBackground == background && m_customForeground == foreground
+            && m_customAccent == accent)
+        return;
+
+    m_customBackground = background;
+    m_customForeground = foreground;
+    m_customAccent = accent;
+    rebuildFormats();
+    rehighlight();
+}
+
 void MarkdownHighlighter::setSearch(const QString &query, int currentMatchStart) {
     if (m_searchQuery == query && m_currentMatchStart == currentMatchStart)
         return;
@@ -30,12 +43,12 @@ void MarkdownHighlighter::setSearch(const QString &query, int currentMatchStart)
 void MarkdownHighlighter::rebuildFormats() {
     const QColor marker = m_darkMode ? QColor(QStringLiteral("#4f525a"))
                                      : QColor(QStringLiteral("#aeb1b5"));
-    const QColor background = m_darkMode ? QColor(QStringLiteral("#101010"))
-                                         : QColor(QStringLiteral("#ffffff"));
-    const QColor text = m_darkMode ? QColor(QStringLiteral("#eeeeee"))
-                                   : QColor(QStringLiteral("#222324"));
-    const QColor link = m_darkMode ? QColor(QStringLiteral("#5584aa"))
-                                   : QColor(QStringLiteral("#2077b2"));
+    const QColor background = !m_customBackground.isEmpty() ? QColor(m_customBackground)
+        : (m_darkMode ? QColor(QStringLiteral("#101010")) : QColor(QStringLiteral("#ffffff")));
+    const QColor text = !m_customForeground.isEmpty() ? QColor(m_customForeground)
+        : (m_darkMode ? QColor(QStringLiteral("#eeeeee")) : QColor(QStringLiteral("#222324")));
+    const QColor link = !m_customAccent.isEmpty() ? QColor(m_customAccent)
+        : (m_darkMode ? QColor(QStringLiteral("#5584aa")) : QColor(QStringLiteral("#2077b2")));
     const QColor quote = marker;
     const QColor codeBackground = m_darkMode ? QColor(QStringLiteral("#1c1a1a"))
                                              : QColor(QStringLiteral("#f8f8f8"));

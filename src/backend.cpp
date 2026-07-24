@@ -1,6 +1,7 @@
 #include "backend.h"
 
 #include <QClipboard>
+#include <QColor>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -23,6 +24,7 @@
 #include <QTextBlockFormat>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTextStream>
 #include <QUrl>
 #include <QVariantMap>
 #include <QWindow>
@@ -114,6 +116,17 @@ Backend::Backend(QObject *parent) : QObject(parent) {
 
                 emit externalChangeDetected(deleted, m_modified);
             });
+
+    loadOmarchyTheme();
+    watchOmarchyTheme();
+    connect(&m_themeWatcher, &QFileSystemWatcher::fileChanged, this, [this]() {
+        loadOmarchyTheme();
+        watchOmarchyTheme();
+    });
+    connect(&m_themeWatcher, &QFileSystemWatcher::directoryChanged, this, [this]() {
+        loadOmarchyTheme();
+        watchOmarchyTheme();
+    });
 }
 
 Backend::~Backend() = default;
@@ -141,8 +154,7 @@ void Backend::setDarkMode(bool darkMode) {
         return;
 
     m_darkMode = darkMode;
-    if (m_highlighter)
-        m_highlighter->setDarkMode(m_darkMode);
+    loadOmarchyTheme();
     emit darkModeChanged();
 }
 
@@ -160,6 +172,7 @@ void Backend::attachDocument(QObject *textDocument) {
     m_lastDocumentText = m_document->toPlainText();
     m_highlighter = new MarkdownHighlighter(m_document);
     m_highlighter->setDarkMode(m_darkMode);
+    m_highlighter->setColors(m_themeBackground, m_themeForeground, m_themeAccent);
 
     connect(m_document, &QTextDocument::contentsChange, this,
             [this](int position, int, int charsAdded) {
@@ -550,6 +563,83 @@ void Backend::watchCurrentFile() {
         m_fileWatcher.removePaths(watched);
     if (m_fileUrl.isLocalFile() && QFileInfo::exists(m_fileUrl.toLocalFile()))
         m_fileWatcher.addPath(m_fileUrl.toLocalFile());
+}
+
+void Backend::loadOmarchyTheme() {
+    m_themeBackground = m_darkMode ? QStringLiteral("#101010") : QStringLiteral("#ffffff");
+    m_themeForeground = m_darkMode ? QStringLiteral("#eeeeee") : QStringLiteral("#222324");
+    m_themeAccent = m_darkMode ? QStringLiteral("#5584aa") : QStringLiteral("#2077b2");
+    m_themeSelection = m_darkMode ? QStringLiteral("#186a9a") : QStringLiteral("#2077b2");
+
+    const QString colorsPath = QDir::homePath()
+        + QStringLiteral("/.config/omarchy/current/theme/colors.toml");
+    QFile file(colorsPath);
+    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&file);
+        while (!in.atEnd()) {
+            const QString line = in.readLine().trimmed();
+            if (line.isEmpty() || line.startsWith(QLatin1Char('#')))
+                continue;
+
+            const int equals = line.indexOf(QLatin1Char('='));
+            if (equals < 0)
+                continue;
+
+            const QString key = line.left(equals).trimmed();
+            QString value = line.mid(equals + 1).trimmed();
+            if (value.size() >= 2
+                    && ((value.front() == QLatin1Char('"') && value.back() == QLatin1Char('"'))
+                        || (value.front() == QLatin1Char('\'') && value.back() == QLatin1Char('\''))))
+                value = value.mid(1, value.size() - 2);
+
+            if (key == QStringLiteral("background"))
+                m_themeBackground = value;
+            else if (key == QStringLiteral("foreground"))
+                m_themeForeground = value;
+            else if (key == QStringLiteral("accent"))
+                m_themeAccent = value;
+            else if (key == QStringLiteral("selection_background"))
+                m_themeSelection = value;
+        }
+    }
+
+    // Omarchy themes don't declare whether they're dark or light, so derive it
+    // from the resolved background color and let it override the OS-reported
+    // dark/light mode when they disagree.
+    const QColor background(m_themeBackground);
+    if (background.isValid()) {
+        const double luminance = 0.299 * background.redF() + 0.587 * background.greenF()
+            + 0.114 * background.blueF();
+        const bool themeIsDark = luminance < 0.5;
+        if (themeIsDark != m_darkMode) {
+            m_darkMode = themeIsDark;
+            emit darkModeChanged();
+        }
+    }
+
+    if (m_highlighter) {
+        m_highlighter->setDarkMode(m_darkMode);
+        m_highlighter->setColors(m_themeBackground, m_themeForeground, m_themeAccent);
+    }
+
+    emit themeColorsChanged();
+}
+
+void Backend::watchOmarchyTheme() {
+    const QStringList watched = m_themeWatcher.files() + m_themeWatcher.directories();
+    if (!watched.isEmpty())
+        m_themeWatcher.removePaths(watched);
+
+    const QString currentDir = QDir::homePath() + QStringLiteral("/.config/omarchy/current");
+    const QString themeDir = currentDir + QStringLiteral("/theme");
+    const QString colorsPath = themeDir + QStringLiteral("/colors.toml");
+
+    if (QDir(currentDir).exists())
+        m_themeWatcher.addPath(currentDir);
+    if (QDir(themeDir).exists())
+        m_themeWatcher.addPath(themeDir);
+    if (QFile::exists(colorsPath))
+        m_themeWatcher.addPath(colorsPath);
 }
 
 QUrl Backend::suggestedSaveUrl() const {
