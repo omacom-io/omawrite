@@ -572,7 +572,8 @@ void Backend::loadOmarchyTheme() {
     m_themeSelection = m_darkMode ? QStringLiteral("#186a9a") : QStringLiteral("#2077b2");
 
     const QString colorsPath = QDir::homePath()
-        + QStringLiteral("/.config/omarchy/current/theme/colors.toml");
+        + QStringLiteral("/.local/state/omarchy/current/theme/colors.toml");
+    QString themeMode;
     QFile file(colorsPath);
     if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QTextStream in(&file);
@@ -592,29 +593,39 @@ void Backend::loadOmarchyTheme() {
                         || (value.front() == QLatin1Char('\'') && value.back() == QLatin1Char('\''))))
                 value = value.mid(1, value.size() - 2);
 
-            if (key == QStringLiteral("background"))
+            if (key == QStringLiteral("mode"))
+                themeMode = value;
+            else if (key == QStringLiteral("background"))
                 m_themeBackground = value;
             else if (key == QStringLiteral("foreground"))
                 m_themeForeground = value;
             else if (key == QStringLiteral("accent"))
                 m_themeAccent = value;
-            else if (key == QStringLiteral("selection_background"))
+            else if (key == QStringLiteral("selection"))
                 m_themeSelection = value;
         }
     }
 
-    // Omarchy themes don't declare whether they're dark or light, so derive it
-    // from the resolved background color and let it override the OS-reported
-    // dark/light mode when they disagree.
-    const QColor background(m_themeBackground);
-    if (background.isValid()) {
-        const double luminance = 0.299 * background.redF() + 0.587 * background.greenF()
-            + 0.114 * background.blueF();
-        const bool themeIsDark = luminance < 0.5;
-        if (themeIsDark != m_darkMode) {
-            m_darkMode = themeIsDark;
-            emit darkModeChanged();
+    bool themeModeKnown = false;
+    bool themeIsDark = m_darkMode;
+    if (themeMode == QStringLiteral("dark")) {
+        themeIsDark = true;
+        themeModeKnown = true;
+    } else if (themeMode == QStringLiteral("light")) {
+        themeIsDark = false;
+        themeModeKnown = true;
+    } else {
+        const QColor background(m_themeBackground);
+        if (background.isValid()) {
+            const double luminance = 0.299 * background.redF()
+                + 0.587 * background.greenF() + 0.114 * background.blueF();
+            themeIsDark = luminance < 0.5;
+            themeModeKnown = true;
         }
+    }
+    if (themeModeKnown && themeIsDark != m_darkMode) {
+        m_darkMode = themeIsDark;
+        emit darkModeChanged();
     }
 
     if (m_highlighter) {
@@ -630,7 +641,8 @@ void Backend::watchOmarchyTheme() {
     if (!watched.isEmpty())
         m_themeWatcher.removePaths(watched);
 
-    const QString currentDir = QDir::homePath() + QStringLiteral("/.config/omarchy/current");
+    const QString currentDir = QDir::homePath()
+        + QStringLiteral("/.local/state/omarchy/current");
     const QString themeDir = currentDir + QStringLiteral("/theme");
     const QString colorsPath = themeDir + QStringLiteral("/colors.toml");
 

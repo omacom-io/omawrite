@@ -53,6 +53,40 @@ private slots:
         QCOMPARE(markup.at(2).markers[0].length, 1);
     }
 
+    void loadsCurrentOmarchyTheme() {
+        QTemporaryDir homeDirectory;
+        QVERIFY(homeDirectory.isValid());
+
+        const QByteArray originalHome = qgetenv("HOME");
+        struct HomeRestorer {
+            QByteArray value;
+            ~HomeRestorer() { qputenv("HOME", value); }
+        } restoreHome{originalHome};
+        QVERIFY(qputenv("HOME", homeDirectory.path().toUtf8()));
+
+        const QString themeDirectory = homeDirectory.path()
+            + QStringLiteral("/.local/state/omarchy/current/theme");
+        QVERIFY(QDir().mkpath(themeDirectory));
+
+        QFile colorsFile(themeDirectory + QStringLiteral("/colors.toml"));
+        QVERIFY(colorsFile.open(QIODevice::WriteOnly | QIODevice::Text));
+        const QByteArray palette(
+            "mode = \"light\"\n"
+            "accent = \"#112233\"\n"
+            "selection = \"#445566\"\n"
+            "background = \"#fefefe\"\n"
+            "foreground = \"#101010\"\n");
+        QCOMPARE(colorsFile.write(palette), qint64(palette.size()));
+        colorsFile.close();
+
+        Backend backend;
+        QCOMPARE(backend.themeBackground(), QStringLiteral("#fefefe"));
+        QCOMPARE(backend.themeForeground(), QStringLiteral("#101010"));
+        QCOMPARE(backend.themeAccent(), QStringLiteral("#112233"));
+        QCOMPARE(backend.themeSelection(), QStringLiteral("#445566"));
+        QVERIFY(!backend.darkMode());
+    }
+
     void ignoresFileWatcherEventsForSavedContents() {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());

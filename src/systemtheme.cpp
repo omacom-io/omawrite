@@ -1,7 +1,7 @@
 #include "systemtheme.h"
 
 #include <QDBusConnection>
-#include <QDBusInterface>
+#include <QDBusMessage>
 #include <QDBusReply>
 #include <QDBusVariant>
 #include <QGuiApplication>
@@ -106,18 +106,19 @@ bool SystemTheme::detectDarkMode() const {
 bool SystemTheme::portalDarkMode(bool *known) const {
     *known = false;
 
-    QDBusInterface settings(QStringLiteral("org.freedesktop.portal.Desktop"),
-                            QStringLiteral("/org/freedesktop/portal/desktop"),
-                            QStringLiteral("org.freedesktop.portal.Settings"));
-    if (!settings.isValid())
+    const QDBusConnection bus = QDBusConnection::sessionBus();
+    if (!bus.isConnected())
         return false;
 
-    settings.setTimeout(150); // Prevent GUI thread freeze if the portal service hangs
-
-    QDBusReply<QDBusVariant> reply = settings.call(
-        QStringLiteral("Read"),
-        QStringLiteral("org.freedesktop.appearance"),
-        QStringLiteral("color-scheme"));
+    QDBusMessage request = QDBusMessage::createMethodCall(
+        QStringLiteral("org.freedesktop.portal.Desktop"),
+        QStringLiteral("/org/freedesktop/portal/desktop"),
+        QStringLiteral("org.freedesktop.portal.Settings"),
+        QStringLiteral("Read"));
+    request << QStringLiteral("org.freedesktop.appearance")
+            << QStringLiteral("color-scheme");
+    const QDBusReply<QDBusVariant> reply(
+        bus.call(request, QDBus::Block, 150));
     if (!reply.isValid())
         return false;
 
