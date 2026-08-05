@@ -30,16 +30,10 @@
 #include <QWindow>
 
 #include <algorithm>
-#include <cmath>
-
 #include "markdownhighlighter.h"
 
 constexpr qreal typoraLineHeightPercent = 140;
 const QString lastSaveDirectorySetting = QStringLiteral("file/lastSaveDirectory");
-
-bool nearlyEqual(qreal left, qreal right) {
-    return qAbs(left - right) < 0.01;
-}
 
 QString Backend::normalizedLinkUrl(const QString &clipboardText) {
     QString candidate = clipboardText.trimmed();
@@ -200,11 +194,11 @@ void Backend::attachDocument(QObject *textDocument) {
 }
 
 void Backend::setHeadingCellWidth(qreal width) {
-    if (!std::isfinite(width) || width <= 0 || nearlyEqual(width, m_headingCellWidth))
+    if (width == m_headingCellWidth)
         return;
 
     m_headingCellWidth = width;
-    reapplyTypographyToAllBlocks();
+    updateAllBlockTypography();
 }
 
 void Backend::openDialog() {
@@ -736,18 +730,12 @@ void Backend::applyDocumentTypography() {
     const bool undoEnabled = m_document->isUndoRedoEnabled();
     m_document->setUndoRedoEnabled(false);
 
-    m_formattingTypography = true;
-    QTextCursor cursor(m_document);
-    cursor.beginEditBlock();
-    for (QTextBlock block = m_document->begin(); block.isValid(); block = block.next())
-        updateBlockTypography(cursor, block);
-    cursor.endEditBlock();
-    m_formattingTypography = false;
+    updateAllBlockTypography();
 
     m_document->setUndoRedoEnabled(undoEnabled);
 }
 
-void Backend::reapplyTypographyToAllBlocks() {
+void Backend::updateAllBlockTypography() {
     if (!m_document)
         return;
 
@@ -787,23 +775,16 @@ void Backend::reapplyTypographyToChange() {
 }
 
 void Backend::updateBlockTypography(QTextCursor &cursor, const QTextBlock &block) const {
-    const QTextBlockFormat current = block.blockFormat();
     const MarkdownHighlighter::HeadingMarkup heading =
         MarkdownHighlighter::headingMarkup(block.text());
-    const qreal gutter = m_headingCellWidth * 7;
-    const qreal indent = heading.isValid() ? -m_headingCellWidth * (heading.level + 1) : 0;
-
-    const bool needsUpdate = current.lineHeightType() != QTextBlockFormat::ProportionalHeight
-        || !nearlyEqual(current.lineHeight(), typoraLineHeightPercent)
-        || !nearlyEqual(current.leftMargin(), gutter)
-        || !nearlyEqual(current.textIndent(), indent);
-    if (!needsUpdate)
+    const QTextBlockFormat current = block.blockFormat();
+    QTextBlockFormat format = current;
+    format.setLineHeight(typoraLineHeightPercent, QTextBlockFormat::ProportionalHeight);
+    format.setLeftMargin(m_headingCellWidth * 7);
+    format.setTextIndent(heading.isValid() ? -m_headingCellWidth * (heading.level + 1) : 0);
+    if (format == current)
         return;
 
-    QTextBlockFormat format;
-    format.setLineHeight(typoraLineHeightPercent, QTextBlockFormat::ProportionalHeight);
-    format.setLeftMargin(gutter);
-    format.setTextIndent(indent);
     cursor.setPosition(block.position());
-    cursor.mergeBlockFormat(format);
+    cursor.setBlockFormat(format);
 }

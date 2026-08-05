@@ -104,7 +104,7 @@ private:
     void refreshWordCount();
     void scheduleWordCount();
     void applyDocumentTypography();
-    void reapplyTypographyToAllBlocks();
+    void updateAllBlockTypography();
     void reapplyTypographyToChange();
     void updateBlockTypography(QTextCursor &cursor, const QTextBlock &block) const;
     void scheduleRecovery();

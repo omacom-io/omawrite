@@ -63,8 +63,7 @@ private slots:
             const auto heading = MarkdownHighlighter::headingMarkup(
                 prefix + QStringLiteral(" Heading"));
             QCOMPARE(heading.level, level);
-            QCOMPARE(heading.marker.length, level + 1);
-            QCOMPARE(heading.content.start, level + 1);
+            QCOMPARE(heading.prefixLength, level + 1);
         }
 
         QVERIFY(!MarkdownHighlighter::headingMarkup(QStringLiteral("####### Heading")).isValid());

@@ -131,6 +131,13 @@ void MarkdownHighlighter::highlightSearch(const QString &text) {
 }
 
 void MarkdownHighlighter::highlightMarkers(const QString &text) {
+    const HeadingMarkup heading = headingMarkup(text);
+    if (heading.isValid()) {
+        setFormat(0, heading.prefixLength, m_markerFormat);
+        setFormat(heading.prefixLength, text.length() - heading.prefixLength, m_headingFormat);
+        return;
+    }
+
     int first = 0;
     while (first < text.length() && text.at(first).isSpace())
         ++first;
@@ -138,15 +145,6 @@ void MarkdownHighlighter::highlightMarkers(const QString &text) {
         return;
 
     const QChar firstChar = text.at(first);
-    if (first == 0 && firstChar == QLatin1Char('#')) {
-        const HeadingMarkup heading = headingMarkup(text);
-        if (heading.isValid()) {
-            setFormat(heading.marker.start, heading.marker.length, m_markerFormat);
-            setFormat(heading.content.start, heading.content.length, m_headingFormat);
-            return;
-        }
-    }
-
     if (firstChar == QLatin1Char('>')) {
         static const QRegularExpression quoteRe(QStringLiteral("^(\\s*>+\\s?)(.*)$"));
         const QRegularExpressionMatch quote = quoteRe.match(text);
@@ -183,10 +181,7 @@ MarkdownHighlighter::HeadingMarkup MarkdownHighlighter::headingMarkup(const QStr
     if (!heading.hasMatch())
         return {};
 
-    const int markerLength = heading.capturedLength(1) + heading.capturedLength(2);
-    return {int(heading.capturedLength(1)),
-            {0, markerLength},
-            {int(heading.capturedStart(3)), int(heading.capturedLength(3))}};
+    return {int(heading.capturedLength(1)), int(heading.capturedStart(3))};
 }
 
 void MarkdownHighlighter::highlightInline(const QString &text) {

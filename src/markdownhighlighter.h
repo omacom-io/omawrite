@@ -29,8 +29,7 @@ public:
 
     struct HeadingMarkup {
         int level = 0;
-        Span marker{0, 0};
-        Span content{0, 0};
+        int prefixLength = 0;
 
         bool isValid() const { return level > 0; }
     };
