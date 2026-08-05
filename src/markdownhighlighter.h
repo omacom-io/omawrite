@@ -31,7 +31,7 @@ public:
         int level = 0;
         int prefixLength = 0;
 
-        bool isValid() const { return level > 0; }
+        bool isValid() const { return level > 0 && level <= 6; }
     };
 
     // Single source of truth for inline markdown spans: the highlighter uses it

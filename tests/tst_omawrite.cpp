@@ -69,6 +69,8 @@ private slots:
         QVERIFY(!MarkdownHighlighter::headingMarkup(QStringLiteral("####### Heading")).isValid());
         QVERIFY(!MarkdownHighlighter::headingMarkup(QStringLiteral("#Heading")).isValid());
         QVERIFY(!MarkdownHighlighter::headingMarkup(QStringLiteral(" # Heading")).isValid());
+        const MarkdownHighlighter::HeadingMarkup invalidLevel{7, 8};
+        QVERIFY(!invalidLevel.isValid());
     }
 
     void loadsCurrentOmarchyTheme() {
