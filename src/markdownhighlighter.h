@@ -27,10 +27,19 @@ public:
         Span markers[2];
     };
 
+    struct HeadingMarkup {
+        int level = 0;
+        Span marker{0, 0};
+        Span content{0, 0};
+
+        bool isValid() const { return level > 0; }
+    };
+
     // Single source of truth for inline markdown spans: the highlighter uses it
     // to style content and hide markers, and the editor uses it (via
     // Backend::hiddenRangesAt) to skip the caret over the hidden markers.
     static QList<InlineMarkup> inlineMarkup(const QString &text);
+    static HeadingMarkup headingMarkup(const QString &text);
 
 protected:
     void highlightBlock(const QString &text) override;

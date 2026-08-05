@@ -11,6 +11,8 @@
 #include <memory>
 
 class MarkdownHighlighter;
+class QTextBlock;
+class QTextCursor;
 class QTextDocument;
 class QWindow;
 class QLockFile;
@@ -54,6 +56,7 @@ public:
     static QString suggestedFileName(const QString &text);
 
     Q_INVOKABLE void attachDocument(QObject *textDocument);
+    Q_INVOKABLE void setHeadingCellWidth(qreal width);
     Q_INVOKABLE void openDialog();
     Q_INVOKABLE void open(const QUrl &url);
     Q_INVOKABLE void save();
@@ -101,7 +104,9 @@ private:
     void refreshWordCount();
     void scheduleWordCount();
     void applyDocumentTypography();
+    void reapplyTypographyToAllBlocks();
     void reapplyTypographyToChange();
+    void updateBlockTypography(QTextCursor &cursor, const QTextBlock &block) const;
     void scheduleRecovery();
     void writeRecovery();
     void restoreRecovery();
@@ -120,9 +125,9 @@ private:
     bool m_loading = false;
     bool m_closeAfterSave = false;
     bool m_formattingTypography = false;
-    int m_formattedBlockCount = 0;
     int m_lastChangePos = 0;
     int m_lastChangeAdded = 0;
+    qreal m_headingCellWidth = 0;
     QTimer m_wordCountTimer;
     QTimer m_recoveryTimer;
     QFileSystemWatcher m_fileWatcher;

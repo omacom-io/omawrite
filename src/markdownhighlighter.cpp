@@ -139,13 +139,10 @@ void MarkdownHighlighter::highlightMarkers(const QString &text) {
 
     const QChar firstChar = text.at(first);
     if (first == 0 && firstChar == QLatin1Char('#')) {
-        static const QRegularExpression headingRe(QStringLiteral("^(#{1,6})(\\s+)(.*)$"));
-        const QRegularExpressionMatch heading = headingRe.match(text);
-        if (heading.hasMatch()) {
-            setFormat(0, heading.capturedLength(1) + heading.capturedLength(2),
-                      m_markerFormat);
-            setFormat(heading.capturedStart(3), heading.capturedLength(3),
-                      m_headingFormat);
+        const HeadingMarkup heading = headingMarkup(text);
+        if (heading.isValid()) {
+            setFormat(heading.marker.start, heading.marker.length, m_markerFormat);
+            setFormat(heading.content.start, heading.content.length, m_headingFormat);
             return;
         }
     }
@@ -175,6 +172,21 @@ void MarkdownHighlighter::highlightMarkers(const QString &text) {
         if (rule.hasMatch())
             setFormat(0, text.length(), m_markerFormat);
     }
+}
+
+MarkdownHighlighter::HeadingMarkup MarkdownHighlighter::headingMarkup(const QString &text) {
+    if (!text.startsWith(QLatin1Char('#')))
+        return {};
+
+    static const QRegularExpression headingRe(QStringLiteral("^(#{1,6})(\\s+)(.*)$"));
+    const QRegularExpressionMatch heading = headingRe.match(text);
+    if (!heading.hasMatch())
+        return {};
+
+    const int markerLength = heading.capturedLength(1) + heading.capturedLength(2);
+    return {int(heading.capturedLength(1)),
+            {0, markerLength},
+            {int(heading.capturedStart(3)), int(heading.capturedLength(3))}};
 }
 
 void MarkdownHighlighter::highlightInline(const QString &text) {

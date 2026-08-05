@@ -29,6 +29,8 @@ ApplicationWindow {
     readonly property int editorWidth: Math.min(
         Math.round(writerFontMetrics.averageCharacterWidth * 65),
         Math.max(360, width - Math.round(writerFontMetrics.averageCharacterWidth * 20)))
+    readonly property real headingCellWidth: writerFontMetrics.averageCharacterWidth
+    readonly property real headingGutterWidth: headingCellWidth * 7
     property bool closeConfirmed: false
     property bool searchOpen: false
     property bool searchUpdating: false
@@ -42,6 +44,8 @@ ApplicationWindow {
     Material.theme: darkMode ? Material.Dark : Material.Light
     Material.accent: backend.themeAccent
     color: pageColor
+
+    onHeadingCellWidthChanged: backend.setHeadingCellWidth(headingCellWidth)
 
     onClosing: function(close) {
         if (closeConfirmed || !backend.modified)
@@ -424,9 +428,14 @@ ApplicationWindow {
             TextEdit {
                 id: editor
                 objectName: "sourceEditor"
-                x: Math.round((editorFlick.width - width) / 2)
+                readonly property real bodyWidth: Math.min(
+                    win.editorWidth, Math.max(1, editorFlick.width - win.headingGutterWidth))
+                readonly property real bodyX: Math.max(
+                    win.headingGutterWidth,
+                    Math.round((editorFlick.width - bodyWidth) / 2))
+                x: bodyX - win.headingGutterWidth
                 y: Math.max(42, Math.round(win.height * 0.05))
-                width: win.editorWidth
+                width: bodyWidth + win.headingGutterWidth
                 height: Math.max(editorFlick.height - y - 96, implicitHeight + 20)
                 text: ""
                 textFormat: TextEdit.PlainText
@@ -451,6 +460,15 @@ ApplicationWindow {
                     var start = Math.min(selectionStart, selectionEnd);
                     var end = Math.max(selectionStart, selectionEnd);
                     EditorMutations.replaceRange(editor, start, end, replacement);
+                }
+
+                function refreshCursorAfterHeading() {
+                    // Qt's edit cursor can retain the heading's inherited indent
+                    // after the new empty block has already been reformatted.
+                    var position = cursorPosition;
+                    if (position > 0)
+                        cursorPosition = position - 1;
+                    cursorPosition = position;
                 }
 
                 function wrapSelection(before, after) {
@@ -486,12 +504,15 @@ ApplicationWindow {
                 }
 
                 function smartReturn(softBreak) {
-                    if (softBreak) {
-                        replaceSelectionWith("\n");
-                        return;
-                    }
                     var lineStart = text.lastIndexOf("\n", cursorPosition - 1) + 1;
                     var line = text.slice(lineStart, cursorPosition);
+                    var leavingHeading = /^#{1,6}\s/.test(line);
+                    if (softBreak) {
+                        replaceSelectionWith("\n");
+                        if (leavingHeading)
+                            refreshCursorAfterHeading();
+                        return;
+                    }
                     var before = text.slice(0, cursorPosition);
                     var fences = (before.match(/^\s*```/gm) || []).length;
                     if ((fences % 2) === 1) {
@@ -512,6 +533,8 @@ ApplicationWindow {
                         return;
                     }
                     replaceSelectionWith("\n\n");
+                    if (leavingHeading)
+                        refreshCursorAfterHeading();
                 }
 
                 function escapeMarkdownLinkText(linkText) {
@@ -668,6 +691,7 @@ ApplicationWindow {
                 Text {
                     anchors.left: parent.left
                     anchors.top: parent.top
+                    anchors.leftMargin: win.headingGutterWidth - win.headingCellWidth * 2
                     text: "# Start writing"
                     visible: editor.text.length === 0 && !editor.activeFocus
                     color: win.mutedColor
@@ -677,6 +701,7 @@ ApplicationWindow {
                 }
 
                 Component.onCompleted: {
+                    backend.setHeadingCellWidth(win.headingCellWidth);
                     backend.attachDocument(textDocument);
                     forceActiveFocus();
                 }

@@ -30,11 +30,16 @@
 #include <QWindow>
 
 #include <algorithm>
+#include <cmath>
 
 #include "markdownhighlighter.h"
 
 constexpr qreal typoraLineHeightPercent = 140;
 const QString lastSaveDirectorySetting = QStringLiteral("file/lastSaveDirectory");
+
+bool nearlyEqual(qreal left, qreal right) {
+    return qAbs(left - right) < 0.01;
+}
 
 QString Backend::normalizedLinkUrl(const QString &clipboardText) {
     QString candidate = clipboardText.trimmed();
@@ -194,6 +199,14 @@ void Backend::attachDocument(QObject *textDocument) {
     restoreRecovery();
 }
 
+void Backend::setHeadingCellWidth(qreal width) {
+    if (!std::isfinite(width) || width <= 0 || nearlyEqual(width, m_headingCellWidth))
+        return;
+
+    m_headingCellWidth = width;
+    reapplyTypographyToAllBlocks();
+}
+
 void Backend::openDialog() {
     emit openDialogRequested();
 }
@@ -347,12 +360,8 @@ bool Backend::editorTextChanged() {
         return false;
     m_lastDocumentText = text;
 
-    if (m_document) {
-        const int blockCount = m_document->blockCount();
-        if (blockCount > m_formattedBlockCount)
-            reapplyTypographyToChange();
-        m_formattedBlockCount = blockCount;
-    }
+    if (m_document)
+        reapplyTypographyToChange();
 
     scheduleWordCount();
     setModified(true);
@@ -722,9 +731,6 @@ void Backend::applyDocumentTypography() {
     if (!m_document)
         return;
 
-    QTextBlockFormat blockFormat;
-    blockFormat.setLineHeight(typoraLineHeightPercent, QTextBlockFormat::ProportionalHeight);
-
     // A full pass is only used for freshly loaded/attached documents, so it is
     // safe to drop undo history here (re-enabling clears the stack anyway).
     const bool undoEnabled = m_document->isUndoRedoEnabled();
@@ -732,21 +738,31 @@ void Backend::applyDocumentTypography() {
 
     m_formattingTypography = true;
     QTextCursor cursor(m_document);
-    cursor.select(QTextCursor::Document);
-    cursor.mergeBlockFormat(blockFormat);
+    cursor.beginEditBlock();
+    for (QTextBlock block = m_document->begin(); block.isValid(); block = block.next())
+        updateBlockTypography(cursor, block);
+    cursor.endEditBlock();
     m_formattingTypography = false;
 
     m_document->setUndoRedoEnabled(undoEnabled);
+}
 
-    m_formattedBlockCount = m_document->blockCount();
+void Backend::reapplyTypographyToAllBlocks() {
+    if (!m_document)
+        return;
+
+    m_formattingTypography = true;
+    QTextCursor cursor(m_document);
+    cursor.beginEditBlock();
+    for (QTextBlock block = m_document->begin(); block.isValid(); block = block.next())
+        updateBlockTypography(cursor, block);
+    cursor.endEditBlock();
+    m_formattingTypography = false;
 }
 
 void Backend::reapplyTypographyToChange() {
     if (!m_document)
         return;
-
-    QTextBlockFormat blockFormat;
-    blockFormat.setLineHeight(typoraLineHeightPercent, QTextBlockFormat::ProportionalHeight);
 
     // Format only the block(s) touched by the last edit instead of the whole
     // document, and fold the change into the preceding edit command so a single
@@ -755,12 +771,39 @@ void Backend::reapplyTypographyToChange() {
     const int start = qBound(0, m_lastChangePos, maxPos);
     const int end = qBound(start, m_lastChangePos + m_lastChangeAdded, maxPos);
 
+    const QTextBlock firstBlock = m_document->findBlock(start);
+    const QTextBlock lastBlock = m_document->findBlock(end);
+
     m_formattingTypography = true;
     QTextCursor cursor(m_document);
     cursor.joinPreviousEditBlock();
-    cursor.setPosition(start);
-    cursor.setPosition(end, QTextCursor::KeepAnchor);
-    cursor.mergeBlockFormat(blockFormat);
+    for (QTextBlock block = firstBlock; block.isValid(); block = block.next()) {
+        updateBlockTypography(cursor, block);
+        if (block == lastBlock)
+            break;
+    }
     cursor.endEditBlock();
     m_formattingTypography = false;
+}
+
+void Backend::updateBlockTypography(QTextCursor &cursor, const QTextBlock &block) const {
+    const QTextBlockFormat current = block.blockFormat();
+    const MarkdownHighlighter::HeadingMarkup heading =
+        MarkdownHighlighter::headingMarkup(block.text());
+    const qreal gutter = m_headingCellWidth * 7;
+    const qreal indent = heading.isValid() ? -m_headingCellWidth * (heading.level + 1) : 0;
+
+    const bool needsUpdate = current.lineHeightType() != QTextBlockFormat::ProportionalHeight
+        || !nearlyEqual(current.lineHeight(), typoraLineHeightPercent)
+        || !nearlyEqual(current.leftMargin(), gutter)
+        || !nearlyEqual(current.textIndent(), indent);
+    if (!needsUpdate)
+        return;
+
+    QTextBlockFormat format;
+    format.setLineHeight(typoraLineHeightPercent, QTextBlockFormat::ProportionalHeight);
+    format.setLeftMargin(gutter);
+    format.setTextIndent(indent);
+    cursor.setPosition(block.position());
+    cursor.mergeBlockFormat(format);
 }
