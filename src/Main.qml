@@ -461,12 +461,11 @@ ApplicationWindow {
                 }
 
                 function refreshCursorAfterHeading() {
-                    // Qt's edit cursor can retain the heading's inherited indent
-                    // after the new empty block has already been reformatted.
-                    var position = cursorPosition;
-                    if (position > 0)
-                        cursorPosition = position - 1;
-                    cursorPosition = position;
+                    // Recalculate the cursor x-position after leaving a heading block.
+                    var originalPosition = cursorPosition;
+                    if (originalPosition > 0)
+                        cursorPosition = originalPosition - 1;
+                    cursorPosition = originalPosition;
                 }
 
                 function wrapSelection(before, after) {
