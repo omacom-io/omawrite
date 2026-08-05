@@ -198,7 +198,7 @@ void Backend::setHeadingCellWidth(qreal width) {
         return;
 
     m_headingCellWidth = width;
-    updateAllBlockTypography();
+    updateAllBlocksTypography();
 }
 
 void Backend::openDialog() {
@@ -730,12 +730,12 @@ void Backend::applyDocumentTypography() {
     const bool undoEnabled = m_document->isUndoRedoEnabled();
     m_document->setUndoRedoEnabled(false);
 
-    updateAllBlockTypography();
+    updateAllBlocksTypography();
 
     m_document->setUndoRedoEnabled(undoEnabled);
 }
 
-void Backend::updateAllBlockTypography() {
+void Backend::updateAllBlocksTypography() {
     if (!m_document)
         return;
 
