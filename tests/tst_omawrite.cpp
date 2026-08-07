@@ -1,5 +1,7 @@
 #include <QtTest>
 #include <QFont>
+#include <QTextDocument>
+#include <QTextLayout>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
@@ -52,6 +54,143 @@ private slots:
         QCOMPARE(markup.at(0).content.length, 4);
         QCOMPARE(markup.at(2).content.length, 4);
         QCOMPARE(markup.at(2).markers[0].length, 1);
+    }
+
+    void leavesInlineCodeLiteral() {
+        QVERIFY(MarkdownHighlighter::inlineMarkup(
+                    QStringLiteral("see `default_line_height` and `file_name`")).isEmpty());
+        QVERIFY(MarkdownHighlighter::inlineMarkup(
+                    QStringLiteral("a_b `c_d`")).isEmpty());
+        // Word-boundary underscores inside a code span are still literal.
+        QVERIFY(MarkdownHighlighter::inlineMarkup(QStringLiteral("`_private_`")).isEmpty());
+        QVERIFY(MarkdownHighlighter::inlineMarkup(QStringLiteral("`a * b * c`")).isEmpty());
+        QVERIFY(MarkdownHighlighter::inlineMarkup(
+                    QStringLiteral("`[not](a link)`")).isEmpty());
+
+        // Emphasis that merely wraps a code span still applies.
+        const auto wrapping = MarkdownHighlighter::inlineMarkup(
+            QStringLiteral("**`file_name` only**"));
+        QCOMPARE(wrapping.size(), 1);
+        QCOMPARE(wrapping.at(0).kind, MarkdownHighlighter::InlineKind::Bold);
+        QCOMPARE(wrapping.at(0).content.start, 2);
+        QCOMPARE(wrapping.at(0).content.length, 16);
+        QCOMPARE(wrapping.at(0).markers[0].length, 2);
+        QCOMPARE(wrapping.at(0).markers[1].start, 18);
+    }
+
+    void keepsIntrawordUnderscoresLiteral() {
+        QVERIFY(MarkdownHighlighter::inlineMarkup(
+                    QStringLiteral("snake_case_name and default_line_height")).isEmpty());
+        QVERIFY(MarkdownHighlighter::inlineMarkup(QStringLiteral("a__b__c")).isEmpty());
+
+        // Emphasis still opens at a word boundary.
+        const auto underscoreBold =
+            MarkdownHighlighter::inlineMarkup(QStringLiteral("say __bold__ here"));
+        QCOMPARE(underscoreBold.size(), 1);
+        QCOMPARE(underscoreBold.at(0).content.start, 6);
+        QCOMPARE(underscoreBold.at(0).content.length, 4);
+
+        const auto emphasis = MarkdownHighlighter::inlineMarkup(
+            QStringLiteral("_italic_, **bold** and mid*word*"));
+        QCOMPARE(emphasis.size(), 3);
+        QCOMPARE(emphasis.at(0).kind, MarkdownHighlighter::InlineKind::Bold);
+        QCOMPARE(emphasis.at(0).content.length, 4);
+        QCOMPARE(emphasis.at(1).content.start, 1);
+        QCOMPARE(emphasis.at(1).content.length, 6);
+        QCOMPARE(emphasis.at(2).content.length, 4);
+    }
+
+    void leavesFencedCodeLiteral() {
+        QTextDocument document;
+        document.setPlainText(QStringLiteral("prose _italic_\n"
+                                            "```ruby\n"
+                                            "snake_case_name = *value*\n"
+                                            "```\n"
+                                            "after _italic_\n"));
+        MarkdownHighlighter highlighter(&document);
+        highlighter.rehighlight();
+
+        const auto stateOf = [&document](int blockNumber) {
+            return document.findBlockByNumber(blockNumber).userState();
+        };
+        QCOMPARE(stateOf(0), int(MarkdownHighlighter::Prose));
+        QCOMPARE(stateOf(1), int(MarkdownHighlighter::InsideFence));
+        QCOMPARE(stateOf(2), int(MarkdownHighlighter::InsideFence));
+        QCOMPARE(stateOf(3), int(MarkdownHighlighter::Prose));
+        QCOMPARE(stateOf(4), int(MarkdownHighlighter::Prose));
+
+        // The fenced line sits on the code panel, with nothing italic and no
+        // marker hidden.
+        const QList<QTextLayout::FormatRange> fenced =
+            document.findBlockByNumber(2).layout()->formats();
+        QCOMPARE(fenced.size(), 1);
+        QCOMPARE(fenced.constFirst().length, document.findBlockByNumber(2).text().length());
+        QVERIFY(fenced.constFirst().format.background().style() != Qt::NoBrush);
+        for (const QTextLayout::FormatRange &range : fenced) {
+            QVERIFY(!range.format.fontItalic());
+            QVERIFY(range.format.foreground().color() != range.format.background().color());
+        }
+
+        const QList<QTextLayout::FormatRange> prose =
+            document.findBlockByNumber(4).layout()->formats();
+        QVERIFY(std::any_of(prose.cbegin(), prose.cend(),
+                            [](const QTextLayout::FormatRange &range) {
+                                return range.format.fontItalic();
+                            }));
+    }
+
+    void takesTheCodePanelFromTheTheme() {
+        QTemporaryDir homeDirectory;
+        QVERIFY(homeDirectory.isValid());
+
+        const QByteArray originalHome = qgetenv("HOME");
+        struct HomeRestorer {
+            QByteArray value;
+            ~HomeRestorer() { qputenv("HOME", value); }
+        } restoreHome{originalHome};
+        QVERIFY(qputenv("HOME", homeDirectory.path().toUtf8()));
+
+        const QString themeDirectory = homeDirectory.path()
+            + QStringLiteral("/.local/state/omarchy/current/theme");
+        QVERIFY(QDir().mkpath(themeDirectory));
+
+        const auto codePanelFor = [&themeDirectory](const QByteArray &palette) {
+            QFile colorsFile(themeDirectory + QStringLiteral("/colors.toml"));
+            if (!colorsFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+                return QColor();
+            colorsFile.write(palette);
+            colorsFile.close();
+            return QColor(Backend().themeCodeBackground());
+        };
+
+        // The shade the theme names for panels wins.
+        QCOMPARE(codePanelFor("mode = \"dark\"\n"
+                              "background = \"#111c18\"\n"
+                              "foreground = \"#c1c497\"\n"
+                              "lighter_background = \"#23372b\"\n"),
+                 QColor(QStringLiteral("#23372b")));
+
+        // Themes naming none leave code on a shade mixed from the page: a
+        // little off the background, and nowhere near the text.
+        const QColor mixedDark = codePanelFor("mode = \"dark\"\n"
+                                              "background = \"#000000\"\n"
+                                              "foreground = \"#ffffff\"\n");
+        QVERIFY(mixedDark != QColor(Qt::black));
+        QVERIFY(mixedDark.lightness() < 60);
+
+        const QColor mixedLight = codePanelFor("mode = \"light\"\n"
+                                               "background = \"#ffffff\"\n"
+                                               "foreground = \"#000000\"\n");
+        QVERIFY(mixedLight != QColor(Qt::white));
+        QVERIFY(mixedLight.lightness() > 195);
+
+        // A theme whose lighter background is the page itself would leave code
+        // with no panel at all, so it falls back to the mix as well.
+        QVERIFY(codePanelFor("mode = \"dark\"\n"
+                             "background = \"#0c0b0c\"\n"
+                             "foreground = \"#fafcfb\"\n"
+                             "lighter_background = \"#0c0b0c\"\n")
+                != QColor(QStringLiteral("#0c0b0c")));
     }
 
     void loadsCurrentOmarchyTheme() {
