@@ -12,6 +12,7 @@
 
 class MarkdownHighlighter;
 class QTextBlock;
+class QTextBlockFormat;
 class QTextCursor;
 class QTextDocument;
 class QWindow;
@@ -106,7 +107,8 @@ private:
     void refreshWordCount();
     void scheduleWordCount();
     void applyDocumentTypography();
-    bool documentTypographyMatches() const;
+    QTextBlockFormat blockFormatWithTypography(const QTextBlock &block) const;
+    bool documentHasExpectedTypography() const;
     void replayHistory(QObject *editor, bool redo);
     void updateAllBlocksTypography();
     void reapplyTypographyToChange();

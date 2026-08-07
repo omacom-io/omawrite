@@ -194,19 +194,22 @@ void Backend::attachDocument(QObject *textDocument) {
     restoreRecovery();
 }
 
-bool Backend::documentTypographyMatches() const {
+QTextBlockFormat Backend::blockFormatWithTypography(const QTextBlock &block) const {
+    const MarkdownHighlighter::HeadingMarkup heading =
+        MarkdownHighlighter::headingMarkup(block.text());
+    QTextBlockFormat format = block.blockFormat();
+    format.setLineHeight(typoraLineHeightPercent, QTextBlockFormat::ProportionalHeight);
+    format.setLeftMargin(m_headingCellWidth * 7);
+    format.setTextIndent(heading.isValid() ? -m_headingCellWidth * (heading.level + 1) : 0);
+    return format;
+}
+
+bool Backend::documentHasExpectedTypography() const {
     if (!m_document)
         return true;
 
     for (QTextBlock block = m_document->begin(); block.isValid(); block = block.next()) {
-        const MarkdownHighlighter::HeadingMarkup heading =
-            MarkdownHighlighter::headingMarkup(block.text());
-        QTextBlockFormat expected = block.blockFormat();
-        expected.setLineHeight(typoraLineHeightPercent, QTextBlockFormat::ProportionalHeight);
-        expected.setLeftMargin(m_headingCellWidth * 7);
-        expected.setTextIndent(heading.isValid()
-                                   ? -m_headingCellWidth * (heading.level + 1) : 0);
-        if (expected != block.blockFormat())
+        if (block.blockFormat() != blockFormatWithTypography(block))
             return false;
     }
     return true;
@@ -398,11 +401,18 @@ void Backend::replayHistory(QObject *editor, bool redo) {
     const QScopedValueRollback historyChange(m_historyChange, true);
     const QString previousText = currentDocumentText();
     const char *action = redo ? "redo" : "undo";
-    do {
-        QMetaObject::invokeMethod(editor, action, Qt::DirectConnection);
-    } while ((redo ? m_document->isRedoAvailable() : m_document->isUndoAvailable())
-             && (currentDocumentText() == previousText
-                 || (redo && !documentTypographyMatches())));
+
+    // Typography can occupy its own history entry. Consume those entries so
+    // each user action reaches one visible text edit with the right formatting.
+    while (redo ? m_document->isRedoAvailable() : m_document->isUndoAvailable()) {
+        if (!QMetaObject::invokeMethod(editor, action, Qt::DirectConnection))
+            return;
+
+        const bool textChanged = currentDocumentText() != previousText;
+        const bool typographyRestored = !redo || documentHasExpectedTypography();
+        if (textChanged && typographyRestored)
+            return;
+    }
 }
 
 QVariantList Backend::hiddenRangesAt(int position) const {
@@ -816,13 +826,8 @@ void Backend::reapplyTypographyToChange() {
 }
 
 void Backend::updateBlockTypography(QTextCursor &cursor, const QTextBlock &block) const {
-    const MarkdownHighlighter::HeadingMarkup heading =
-        MarkdownHighlighter::headingMarkup(block.text());
     const QTextBlockFormat current = block.blockFormat();
-    QTextBlockFormat format = current;
-    format.setLineHeight(typoraLineHeightPercent, QTextBlockFormat::ProportionalHeight);
-    format.setLeftMargin(m_headingCellWidth * 7);
-    format.setTextIndent(heading.isValid() ? -m_headingCellWidth * (heading.level + 1) : 0);
+    const QTextBlockFormat format = blockFormatWithTypography(block);
     if (format == current)
         return;
 
