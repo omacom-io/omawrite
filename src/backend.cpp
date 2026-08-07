@@ -20,6 +20,7 @@
 #include <QJsonObject>
 #include <QLockFile>
 #include <QSaveFile>
+#include <QScopedValueRollback>
 #include <QTextBlock>
 #include <QTextBlockFormat>
 #include <QTextCursor>
@@ -193,6 +194,24 @@ void Backend::attachDocument(QObject *textDocument) {
     restoreRecovery();
 }
 
+bool Backend::documentTypographyMatches() const {
+    if (!m_document)
+        return true;
+
+    for (QTextBlock block = m_document->begin(); block.isValid(); block = block.next()) {
+        const MarkdownHighlighter::HeadingMarkup heading =
+            MarkdownHighlighter::headingMarkup(block.text());
+        QTextBlockFormat expected = block.blockFormat();
+        expected.setLineHeight(typoraLineHeightPercent, QTextBlockFormat::ProportionalHeight);
+        expected.setLeftMargin(m_headingCellWidth * 7);
+        expected.setTextIndent(heading.isValid()
+                                   ? -m_headingCellWidth * (heading.level + 1) : 0);
+        if (expected != block.blockFormat())
+            return false;
+    }
+    return true;
+}
+
 void Backend::setHeadingCellWidth(qreal width) {
     if (width == m_headingCellWidth)
         return;
@@ -354,7 +373,7 @@ bool Backend::editorTextChanged() {
         return false;
     m_lastDocumentText = text;
 
-    if (m_document)
+    if (m_document && !m_historyChange)
         reapplyTypographyToChange();
 
     scheduleWordCount();
@@ -362,6 +381,28 @@ bool Backend::editorTextChanged() {
     setStatus(QStringLiteral("Unsaved"));
     scheduleRecovery();
     return true;
+}
+
+void Backend::undo(QObject *editor) {
+    replayHistory(editor, false);
+}
+
+void Backend::redo(QObject *editor) {
+    replayHistory(editor, true);
+}
+
+void Backend::replayHistory(QObject *editor, bool redo) {
+    if (!editor || !m_document)
+        return;
+
+    const QScopedValueRollback historyChange(m_historyChange, true);
+    const QString previousText = currentDocumentText();
+    const char *action = redo ? "redo" : "undo";
+    do {
+        QMetaObject::invokeMethod(editor, action, Qt::DirectConnection);
+    } while ((redo ? m_document->isRedoAvailable() : m_document->isUndoAvailable())
+             && (currentDocumentText() == previousText
+                 || (redo && !documentTypographyMatches())));
 }
 
 QVariantList Backend::hiddenRangesAt(int position) const {

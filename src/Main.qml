@@ -215,13 +215,13 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+Z"
         context: Qt.WindowShortcut
-        onActivated: editor.undo()
+        onActivated: editor.undoDocument()
     }
 
     Shortcut {
         sequences: ["Ctrl+Shift+Z", "Ctrl+Y"]
         context: Qt.WindowShortcut
-        onActivated: editor.redo()
+        onActivated: editor.redoDocument()
     }
 
     Shortcut {
@@ -454,6 +454,14 @@ ApplicationWindow {
                 }
                 onCursorRectangleChanged: editorFlick.ensureCursorVisible()
 
+                function undoDocument() {
+                    backend.undo(editor);
+                }
+
+                function redoDocument() {
+                    backend.redo(editor);
+                }
+
                 function replaceSelectionWith(replacement) {
                     var start = Math.min(selectionStart, selectionEnd);
                     var end = Math.max(selectionStart, selectionEnd);
@@ -640,6 +648,17 @@ ApplicationWindow {
 
                 Keys.priority: Keys.BeforeItem
                 Keys.onPressed: function(event) {
+                    if (event.matches(StandardKey.Undo)) {
+                        undoDocument();
+                        event.accepted = true;
+                        return;
+                    }
+                    if (event.matches(StandardKey.Redo)) {
+                        redoDocument();
+                        event.accepted = true;
+                        return;
+                    }
+
                     var pasteKey = (event.key === Qt.Key_V)
                         && (event.modifiers & Qt.ControlModifier)
                         && !(event.modifiers & (Qt.AltModifier | Qt.MetaModifier | Qt.ShiftModifier));

@@ -295,6 +295,58 @@ private slots:
                 <= editorParent->property("width").toReal() + 0.01);
     }
 
+    void undoingHeadingDoesNotExposeTypographyStep() {
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QVERIFY(!mainQmlPath.isEmpty());
+
+        Backend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        QObject *editor = window->findChild<QObject *>(QStringLiteral("sourceEditor"));
+        QVERIFY(editor);
+        auto *quickDocument = editor->property("textDocument").value<QQuickTextDocument *>();
+        QVERIFY(quickDocument);
+        QTextDocument *document = quickDocument->textDocument();
+        QVERIFY(document);
+
+        editor->setProperty("cursorPosition", 0);
+        QVERIFY(QMetaObject::invokeMethod(editor, "insert",
+                                         Q_ARG(int, 0),
+                                         Q_ARG(QString, QStringLiteral("### Heading"))));
+        QVERIFY(QMetaObject::invokeMethod(editor, "smartReturn",
+                                         Q_ARG(QVariant, QVariant(false))));
+        editor->setProperty("cursorPosition", editor->property("text").toString().size());
+        QVERIFY(QMetaObject::invokeMethod(editor, "replaceSelectionWith",
+                                         Q_ARG(QVariant, QVariant(QStringLiteral("body")))));
+
+        QKeyEvent undoEvent(QEvent::KeyPress, Qt::Key_Z, Qt::ControlModifier);
+        QCoreApplication::sendEvent(editor, &undoEvent);
+        QVERIFY(undoEvent.isAccepted());
+        QCOMPARE(editor->property("text").toString(), QStringLiteral("### Heading\n\n"));
+        QVERIFY(QMetaObject::invokeMethod(editor, "undoDocument"));
+        QCOMPARE(editor->property("text").toString(), QStringLiteral("### Heading"));
+        const qreal expectedIndent = -window->property("headingCellWidth").toReal() * 4;
+        QVERIFY(qAbs(document->begin().blockFormat().textIndent() - expectedIndent) < 0.01);
+        QVERIFY(QMetaObject::invokeMethod(editor, "undoDocument"));
+        QCOMPARE(editor->property("text").toString(), QString());
+
+        for (int i = 0; i < 2; ++i) {
+            editor->setProperty("cursorPosition", editor->property("text").toString().size());
+            QVERIFY(QMetaObject::invokeMethod(editor, "undoDocument"));
+            QCoreApplication::processEvents();
+            QCOMPARE(editor->property("text").toString(), QString());
+        }
+
+        QVERIFY(QMetaObject::invokeMethod(editor, "redoDocument"));
+        QCOMPARE(editor->property("text").toString(), QStringLiteral("### Heading"));
+        QVERIFY(qAbs(document->begin().blockFormat().textIndent() - expectedIndent) < 0.01);
+    }
+
     void remembersLastSaveDirectory() {
         QTemporaryDir saveDirectory;
         QVERIFY(saveDirectory.isValid());

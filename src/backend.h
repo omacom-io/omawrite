@@ -72,6 +72,8 @@ public:
     Q_INVOKABLE QString clipboardUrl() const;
     Q_INVOKABLE QString clipboardText() const;
     Q_INVOKABLE bool editorTextChanged();
+    Q_INVOKABLE void undo(QObject *editor);
+    Q_INVOKABLE void redo(QObject *editor);
     Q_INVOKABLE QVariantList hiddenRangesAt(int position) const;
     Q_INVOKABLE void setSearchHighlight(const QString &query, int currentMatchStart);
     Q_INVOKABLE void openExternalUrl(const QUrl &url);
@@ -104,6 +106,8 @@ private:
     void refreshWordCount();
     void scheduleWordCount();
     void applyDocumentTypography();
+    bool documentTypographyMatches() const;
+    void replayHistory(QObject *editor, bool redo);
     void updateAllBlocksTypography();
     void reapplyTypographyToChange();
     void updateBlockTypography(QTextCursor &cursor, const QTextBlock &block) const;
@@ -125,6 +129,7 @@ private:
     bool m_loading = false;
     bool m_closeAfterSave = false;
     bool m_formattingTypography = false;
+    bool m_historyChange = false;
     int m_lastChangePos = 0;
     int m_lastChangeAdded = 0;
     qreal m_headingCellWidth = 0;
