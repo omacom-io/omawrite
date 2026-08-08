@@ -3,7 +3,10 @@
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
+#include <QQuickTextDocument>
 #include <QQuickStyle>
+#include <QTextBlock>
+#include <QTextDocument>
 
 #include "backend.h"
 #include "markdownhighlighter.h"
@@ -52,6 +55,22 @@ private slots:
         QCOMPARE(markup.at(0).content.length, 4);
         QCOMPARE(markup.at(2).content.length, 4);
         QCOMPARE(markup.at(2).markers[0].length, 1);
+    }
+
+    void findsMarkdownHeadings() {
+        for (int level = 1; level <= 6; ++level) {
+            const QString prefix(level, QLatin1Char('#'));
+            const auto heading = MarkdownHighlighter::headingMarkup(
+                prefix + QStringLiteral(" Heading"));
+            QCOMPARE(heading.level, level);
+            QCOMPARE(heading.prefixLength, level + 1);
+        }
+
+        QVERIFY(!MarkdownHighlighter::headingMarkup(QStringLiteral("####### Heading")).isValid());
+        QVERIFY(!MarkdownHighlighter::headingMarkup(QStringLiteral("#Heading")).isValid());
+        QVERIFY(!MarkdownHighlighter::headingMarkup(QStringLiteral(" # Heading")).isValid());
+        const MarkdownHighlighter::HeadingMarkup invalidLevel{7, 8};
+        QVERIFY(!invalidLevel.isValid());
     }
 
     void loadsCurrentOmarchyTheme() {
@@ -216,6 +235,116 @@ private slots:
         backend.setTextScale(9.0 / 12.0);
         QCOMPARE(window->property("editorFontPixelSize").toInt(), 15);
         QCOMPARE(editor->property("font").value<QFont>().pixelSize(), 15);
+    }
+
+    void laysOutAndEditsHeadings() {
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QVERIFY(!mainQmlPath.isEmpty());
+
+        Backend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        QObject *editor = window->findChild<QObject *>(QStringLiteral("sourceEditor"));
+        QVERIFY(editor);
+        auto *quickDocument = editor->property("textDocument").value<QQuickTextDocument *>();
+        QVERIFY(quickDocument);
+        QTextDocument *document = quickDocument->textDocument();
+        QVERIFY(document);
+
+        editor->setProperty("text", QStringLiteral("Body\nBody"));
+        editor->setProperty("cursorPosition", 0);
+        QCoreApplication::processEvents();
+        const qreal bodyCursorX = editor->property("cursorRectangle").toRectF().x();
+
+        editor->setProperty("text", QStringLiteral("## Heading\nBody"));
+        const QTextBlock heading = document->begin();
+        const QTextBlock body = heading.next();
+        const qreal gutter = window->property("headingGutterWidth").toReal();
+        const qreal expectedPrefixWidth = window->property("headingCellWidth").toReal() * 3;
+        QVERIFY(qAbs(heading.blockFormat().leftMargin() - gutter) < 0.01);
+        QVERIFY(qAbs(heading.blockFormat().textIndent() + expectedPrefixWidth) < 0.01);
+        QCOMPARE(body.blockFormat().textIndent(), 0.0);
+
+        editor->setProperty("text", QStringLiteral("Heading\nBody"));
+        QCOMPARE(document->begin().blockFormat().textIndent(), 0.0);
+
+        editor->setProperty("text", QStringLiteral("### Heading"));
+        editor->setProperty("cursorPosition", editor->property("text").toString().size());
+        QVERIFY(QMetaObject::invokeMethod(editor, "smartReturn",
+                                         Q_ARG(QVariant, QVariant(false))));
+        QCOMPARE(editor->property("text").toString(), QStringLiteral("### Heading\n\n"));
+        QVERIFY(qAbs(editor->property("cursorRectangle").toRectF().x() - bodyCursorX) < 0.01);
+
+        editor->setProperty("text", QStringLiteral("###### Heading"));
+        const qreal initialGutter = window->property("headingGutterWidth").toReal();
+        backend.setTextScale(3.0);
+        window->setProperty("width", 720);
+        QTRY_VERIFY(window->property("headingGutterWidth").toReal() > initialGutter);
+
+        const qreal scaledGutter = window->property("headingGutterWidth").toReal();
+        QTRY_VERIFY(qAbs(document->begin().blockFormat().leftMargin() - scaledGutter) < 0.01);
+        QVERIFY(editor->property("x").toReal() >= 0);
+        QObject *editorParent = editor->parent();
+        QVERIFY(editorParent);
+        QVERIFY(editor->property("x").toReal() + editor->property("width").toReal()
+                <= editorParent->property("width").toReal() + 0.01);
+    }
+
+    void undoingHeadingDoesNotExposeTypographyStep() {
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QVERIFY(!mainQmlPath.isEmpty());
+
+        Backend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        QObject *editor = window->findChild<QObject *>(QStringLiteral("sourceEditor"));
+        QVERIFY(editor);
+        auto *quickDocument = editor->property("textDocument").value<QQuickTextDocument *>();
+        QVERIFY(quickDocument);
+        QTextDocument *document = quickDocument->textDocument();
+        QVERIFY(document);
+
+        editor->setProperty("cursorPosition", 0);
+        QVERIFY(QMetaObject::invokeMethod(editor, "insert",
+                                         Q_ARG(int, 0),
+                                         Q_ARG(QString, QStringLiteral("### Heading"))));
+        QVERIFY(QMetaObject::invokeMethod(editor, "smartReturn",
+                                         Q_ARG(QVariant, QVariant(false))));
+        editor->setProperty("cursorPosition", editor->property("text").toString().size());
+        QVERIFY(QMetaObject::invokeMethod(editor, "replaceSelectionWith",
+                                         Q_ARG(QVariant, QVariant(QStringLiteral("body")))));
+
+        QKeyEvent undoEvent(QEvent::KeyPress, Qt::Key_Z, Qt::ControlModifier);
+        QCoreApplication::sendEvent(editor, &undoEvent);
+        QVERIFY(undoEvent.isAccepted());
+        QCOMPARE(editor->property("text").toString(), QStringLiteral("### Heading\n\n"));
+        QVERIFY(QMetaObject::invokeMethod(editor, "undoDocument"));
+        QCOMPARE(editor->property("text").toString(), QStringLiteral("### Heading"));
+        const qreal expectedIndent = -window->property("headingCellWidth").toReal() * 4;
+        QVERIFY(qAbs(document->begin().blockFormat().textIndent() - expectedIndent) < 0.01);
+        QVERIFY(QMetaObject::invokeMethod(editor, "undoDocument"));
+        QCOMPARE(editor->property("text").toString(), QString());
+
+        for (int i = 0; i < 2; ++i) {
+            editor->setProperty("cursorPosition", editor->property("text").toString().size());
+            QVERIFY(QMetaObject::invokeMethod(editor, "undoDocument"));
+            QCoreApplication::processEvents();
+            QCOMPARE(editor->property("text").toString(), QString());
+        }
+
+        QVERIFY(QMetaObject::invokeMethod(editor, "redoDocument"));
+        QCOMPARE(editor->property("text").toString(), QStringLiteral("### Heading"));
+        QVERIFY(qAbs(document->begin().blockFormat().textIndent() - expectedIndent) < 0.01);
     }
 
     void remembersLastSaveDirectory() {
